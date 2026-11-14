@@ -1,0 +1,401 @@
+import { AI_PROVIDERS, getGameDateObj, getHolidayForDate } from '../config.js';
+import { gameState, aiSettings, saveState, saveAiSettings, resetState } from '../state.js';
+import { testAiConnection } from '../ai.js';
+import { setAmbientMode, stopAmbient } from '../sound.js';
+
+let currentSubTab = 'finance'; // 'finance' | 'settings'
+
+export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
+  const container = document.getElementById('screen-finance');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="screen-header">
+      <h1 class="screen-title">Касса и ИИ</h1>
+    </div>
+
+    <div class="segmented-tabs">
+      <button class="seg-btn ${currentSubTab === 'finance' ? 'active' : ''}" data-subtab="finance">
+        💰 Бухгалтерия
+      </button>
+      <button class="seg-btn ${currentSubTab === 'settings' ? 'active' : ''}" data-subtab="settings">
+        ⚙️ Настройки и ИИ
+      </button>
+    </div>
+
+    <div id="finance-subtab-body" style="display: flex; flex-direction: column; gap: 12px;"></div>
+  `;
+
+  container.querySelectorAll('[data-subtab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentSubTab = btn.dataset.subtab;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+  });
+
+  const body = document.getElementById('finance-subtab-body');
+  if (currentSubTab === 'finance') {
+    renderFinanceTab(body);
+  } else {
+    renderSettingsTab(body, onHudUpdate, showToast);
+  }
+}
+
+function renderFinanceTab(body) {
+  const curDate = getGameDateObj(gameState.startDate, gameState.day - 1);
+  const todayHoliday = getHolidayForDate(curDate);
+  const holidayText = todayHoliday
+    ? `🎉 Сегодня ${todayHoliday.name}! Спрос x3, цены поставщиков x2.`
+    : 'Ближайшие крупные праздники: 14 Февраля и 8 Марта (спрос x3).';
+
+  const balanceBadge =
+    gameState.money >= 0
+      ? '<span class="badge badge-ok">Плюс</span>'
+      : '<span class="badge badge-warn">Долг арендодателю!</span>';
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="row-between">
+        <div class="card-title">🏦 Состояние счёта</div>
+        ${balanceBadge}
+      </div>
+      <div class="row-between">
+        <span class="muted-text">Текущий баланс:</span>
+        <strong>${gameState.money.toLocaleString('ru-RU')} ₽</strong>
+      </div>
+      <div class="row-between">
+        <span class="muted-text">Еженедельная аренда и свет:</span>
+        <strong>${gameState.weeklyRent.toLocaleString('ru-RU')} ₽</strong>
+      </div>
+      <div class="row-between">
+        <span class="muted-text">До оплаты аренды:</span>
+        <strong>${gameState.daysUntilRent} дн.</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📊 Статистика лавки</div>
+      <div class="row-between">
+        <span class="muted-text">Продано букетов/цветов:</span>
+        <strong>${gameState.bouquetsSold}</strong>
+      </div>
+      <div class="row-between">
+        <span class="muted-text">Всего заработано:</span>
+        <strong>${gameState.totalEarned.toLocaleString('ru-RU')} ₽</strong>
+      </div>
+      <div class="row-between">
+        <span class="muted-text">Всего потрачено:</span>
+        <strong>${gameState.totalSpent.toLocaleString('ru-RU')} ₽</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📅 Календарь сезонности</div>
+      <p class="muted-text">${holidayText}</p>
+    </div>
+  `;
+}
+
+async function renderSettingsTab(body, onHudUpdate, showToast) {
+  const selectedProvider = AI_PROVIDERS[aiSettings.provider] || AI_PROVIDERS.openrouter;
+  const providerOptions = Object.values(AI_PROVIDERS)
+    .map(
+      (p) =>
+        `<option value="${p.id}" ${p.id === aiSettings.provider ? 'selected' : ''}>${p.name}</option>`
+    )
+    .join('');
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="card-title">🔊 Звук и Фоновая музыка</div>
+      <button class="btn ${gameState.soundEnabled ? 'btn-sage' : 'btn-soft'}" id="btn-toggle-sound">
+        ${gameState.soundEnabled ? '🔊 Все звуки игры: Включены' : '🔇 Все звуки игры: Выключены'}
+      </button>
+
+      <div class="form-group">
+        <label class="form-label" for="ambient-mode-select">Фоновая атмосфера</label>
+        <select class="form-select" id="ambient-mode-select" ${!gameState.soundEnabled ? 'disabled' : ''}>
+          <option value="none" ${gameState.ambientMode === 'none' ? 'selected' : ''}>🔇 Без фона</option>
+          <option value="music" ${gameState.ambientMode === 'music' ? 'selected' : ''}>🎹 Спокойная уютная музыка</option>
+          <option value="rain" ${gameState.ambientMode === 'rain' ? 'selected' : ''}>🌧️ Мягкий шум дождя</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🐱 Питомец в Домике</div>
+      <div class="form-group">
+        <label class="form-label" for="pet-name-input">Имя кошки</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" class="form-input" id="pet-name-input" value="${escapeAttr(gameState.petName || 'Пискля')}" maxlength="20" style="flex:1;" />
+          <button class="btn btn-primary" id="btn-save-pet-name" style="padding:10px 14px;">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧠 Настройка ИИ и API-ключа</div>
+      <p class="muted-text">
+        Ключ сохраняется только в памяти твоего браузера. Рекомендуется OpenRouter с моделью <code>baidu/ernie-5.5-flash-preview:free</code>.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label" for="ai-provider-select">Провайдер ИИ</label>
+        <select class="form-select" id="ai-provider-select">${providerOptions}</select>
+      </div>
+
+      <div id="custom-api-fields" style="display: ${selectedProvider.needsKey ? 'flex' : 'none'}; flex-direction: column; gap: 10px;">
+        <div class="form-group">
+          <label class="form-label" for="ai-api-key">API-ключ</label>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input
+              type="password"
+              class="form-input"
+              id="ai-api-key"
+              name="fleur-custom-key"
+              autocomplete="new-password"
+              data-lpignore="true"
+              placeholder="Вставь ключ (sk-or-..., sk-..., AIza...)"
+              value="${escapeAttr(aiSettings.apiKey)}"
+              style="flex: 1;"
+            />
+            <button type="button" class="btn btn-soft" id="btn-toggle-key-eye" title="Показать / скрыть ключ" style="padding: 10px 12px;">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="ai-model-input">Название модели</label>
+          <input
+            type="text"
+            class="form-input"
+            id="ai-model-input"
+            placeholder="${selectedProvider.defaultModel}"
+            value="${escapeAttr(aiSettings.model || selectedProvider.defaultModel)}"
+          />
+        </div>
+
+        <details style="font-size: 12px; color: var(--text-muted);">
+          <summary style="cursor: pointer; font-weight: 700;">Расширенные настройки (Base URL)</summary>
+          <div class="form-group" style="margin-top: 8px;">
+            <input
+              type="text"
+              class="form-input"
+              id="ai-baseurl-input"
+              placeholder="${selectedProvider.defaultBaseUrl}"
+              value="${escapeAttr(aiSettings.baseUrl || selectedProvider.defaultBaseUrl)}"
+            />
+          </div>
+        </details>
+      </div>
+
+      <button class="btn btn-primary" id="btn-save-ai">💾 Сохранить настройки ИИ</button>
+      <button class="btn btn-sage" id="btn-test-ai">🧪 Проверить связь с ИИ</button>
+      <div id="ai-test-result" class="muted-text" style="display:none; padding: 8px; background: var(--bg-soft); border-radius: 8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="row-between">
+        <div class="card-title">☁️ Аккаунт Puter.js (если нужен)</div>
+        <span class="badge badge-warn" id="puter-status-badge">Проверка...</span>
+      </div>
+      <div class="row-between" style="gap: 8px;">
+        <button class="btn btn-soft" id="btn-puter-signin" style="flex: 1;">Войти в Puter</button>
+        <button class="btn btn-soft" id="btn-puter-signout" style="display: none;">Выйти</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🗑️ Сброс прогресса</div>
+      <button class="btn btn-danger" id="btn-reset-game">🗑️ Начать игру заново</button>
+      <p style="margin-top: 8px; padding: 10px; border-radius: 12px; background: var(--bg-accent-soft); color: var(--primary-hover); font-size: 12.5px; font-weight: 800; text-align: center; line-height: 1.45;">
+        Моей единственной и самой любимой полноценная игра, только для тебя Алиюш ❤️
+      </p>
+    </div>
+  `;
+
+  setupPuterBlock(showToast);
+  setupAiForm(showToast);
+  setupGameControls(onHudUpdate, showToast);
+}
+
+async function setupPuterBlock(showToast) {
+  const badge = document.getElementById('puter-status-badge');
+  const btnIn = document.getElementById('btn-puter-signin');
+  const btnOut = document.getElementById('btn-puter-signout');
+  if (!badge || !btnIn || !btnOut) return;
+
+  const refreshStatus = async () => {
+    if (typeof window.puter === 'undefined' || !window.puter.auth) {
+      badge.className = 'badge badge-warn';
+      badge.textContent = 'Не загружен';
+      return;
+    }
+    try {
+      const signedIn = window.puter.auth.isSignedIn();
+      if (signedIn) {
+        const user = await window.puter.auth.getUser();
+        badge.className = 'badge badge-ok';
+        badge.textContent = `Вход: ${user?.username || 'Активен'}`;
+        btnIn.style.display = 'none';
+        btnOut.style.display = 'inline-flex';
+      } else {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Не подключен';
+        btnIn.style.display = 'inline-flex';
+        btnOut.style.display = 'none';
+      }
+    } catch (err) {
+      badge.className = 'badge badge-warn';
+      badge.textContent = 'Гость';
+    }
+  };
+
+  btnIn.addEventListener('click', async () => {
+    try {
+      await window.puter.auth.signIn();
+      showToast('Успешный вход в Puter!');
+      refreshStatus();
+    } catch (err) {
+      showToast('Авторизация отменена или недоступна');
+    }
+  });
+
+  btnOut.addEventListener('click', async () => {
+    try {
+      await window.puter.auth.signOut();
+      showToast('Вы вышли из аккаунта Puter');
+      refreshStatus();
+    } catch (err) {
+      showToast('Не удалось выйти');
+    }
+  });
+
+  refreshStatus();
+}
+
+function setupAiForm(showToast) {
+  const select = document.getElementById('ai-provider-select');
+  const fields = document.getElementById('custom-api-fields');
+  const keyInput = document.getElementById('ai-api-key');
+  const modelInput = document.getElementById('ai-model-input');
+  const baseUrlInput = document.getElementById('ai-baseurl-input');
+  const saveBtn = document.getElementById('btn-save-ai');
+  const testBtn = document.getElementById('btn-test-ai');
+  const testResult = document.getElementById('ai-test-result');
+
+  const toggleEyeBtn = document.getElementById('btn-toggle-key-eye');
+  toggleEyeBtn?.addEventListener('click', () => {
+    const isHidden = keyInput.type === 'password';
+    keyInput.type = isHidden ? 'text' : 'password';
+    toggleEyeBtn.textContent = isHidden ? '🙈' : '👁️';
+  });
+
+  select.addEventListener('change', () => {
+    const provider = AI_PROVIDERS[select.value];
+    fields.style.display = provider.needsKey ? 'flex' : 'none';
+    modelInput.value = provider.defaultModel;
+    baseUrlInput.value = provider.defaultBaseUrl;
+  });
+
+  const applyFormToSettings = () => {
+    const providerId = select.value;
+    const provider = AI_PROVIDERS[providerId];
+    const apiKey = keyInput.value.trim();
+
+    if (provider.needsKey && !apiKey) {
+      showToast('Вставь API-ключ для выбранного провайдера');
+      return false;
+    }
+
+    saveAiSettings({
+      provider: providerId,
+      apiKey,
+      model: modelInput.value.trim() || provider.defaultModel,
+      baseUrl: baseUrlInput.value.trim() || provider.defaultBaseUrl
+    });
+    return true;
+  };
+
+  saveBtn.addEventListener('click', () => {
+    if (!applyFormToSettings()) return;
+    const provider = AI_PROVIDERS[select.value];
+    showToast(`Настройки ИИ сохранены (${provider.name})`);
+  });
+
+  testBtn.addEventListener('click', async () => {
+    if (!applyFormToSettings()) return;
+    testBtn.disabled = true;
+    testBtn.textContent = '⏳ Проверяем...';
+    testResult.style.display = 'block';
+    testResult.textContent = 'Отправляем пробный запрос...';
+
+    try {
+      const reply = await testAiConnection();
+      testResult.textContent = `✅ Связь работает! Ответ ИИ: «${reply}»`;
+      showToast('ИИ подключен и отвечает!');
+    } catch (err) {
+      testResult.textContent = `❌ Ошибка: ${err.message}`;
+    } finally {
+      testBtn.disabled = false;
+      testBtn.textContent = '🧪 Проверить связь с ИИ';
+    }
+  });
+}
+
+function setupGameControls(onHudUpdate, showToast) {
+  const soundBtn = document.getElementById('btn-toggle-sound');
+  const ambientSelect = document.getElementById('ambient-mode-select');
+  const petInput = document.getElementById('pet-name-input');
+  const savePetBtn = document.getElementById('btn-save-pet-name');
+  const resetBtn = document.getElementById('btn-reset-game');
+
+  soundBtn.addEventListener('click', () => {
+    gameState.soundEnabled = !gameState.soundEnabled;
+    if (!gameState.soundEnabled) {
+      stopAmbient();
+    } else if (gameState.ambientMode !== 'none') {
+      setAmbientMode(gameState.ambientMode);
+    }
+    saveState();
+    renderFinanceSettingsScreen(onHudUpdate, showToast);
+    showToast(gameState.soundEnabled ? 'Звук включён' : 'Звук полностью выключен');
+  });
+
+  ambientSelect.addEventListener('change', () => {
+    gameState.ambientMode = ambientSelect.value;
+    setAmbientMode(gameState.ambientMode);
+    saveState();
+    showToast(
+      gameState.ambientMode === 'music'
+        ? '🎹 Спокойная музыка включена'
+        : gameState.ambientMode === 'rain'
+        ? '🌧️ Шум дождя включён'
+        : 'Фон выключен'
+    );
+  });
+
+  savePetBtn.addEventListener('click', () => {
+    const newName = petInput.value.trim() || 'Пискля';
+    gameState.petName = newName;
+    saveState();
+    showToast(`🐱 Имя питомца изменено на «${newName}»`);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    if (confirm('Точно сбросить весь прогресс магазина? Настройки API-ключа сохранятся.')) {
+      stopAmbient();
+      resetState();
+      window.location.reload();
+    }
+  });
+}
+
+function escapeAttr(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}

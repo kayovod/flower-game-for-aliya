@@ -1,0 +1,178 @@
+/* Карточка пришедшего клиента у прилавка */
+.client-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fadeInScreen 0.25s ease-out;
+}
+
+.client-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.client-avatar {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  background: var(--bg-soft);
+  border: 2px solid #FFFDF9;
+  box-shadow: 0 4px 10px rgba(74, 62, 57, 0.1);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.client-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.client-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.client-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.client-tag {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* Шкала настроения клиента */
+.client-mood-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* Чат с клиентом */
+.chat-box {
+  background: #FAF6F0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  max-height: 195px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-bubble {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.chat-bubble.client {
+  align-self: flex-start;
+  background: #FFFFFF;
+  border: 1px solid var(--border-soft);
+  border-bottom-left-radius: 4px;
+  color: var(--text-main);
+}
+
+.chat-bubble.player {
+  align-self: flex-end;
+  background: var(--bg-accent-soft);
+  border: 1px solid #F1CFC9;
+  border-bottom-right-radius: 4px;
+  color: var(--text-main);
+}
+
+.chat-bubble.system-note {
+  align-self: center;
+  background: var(--bg-sage-soft);
+  color: var(--sage-dark);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.chat-typing {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 2px 6px;
+}
+
+/* Ввод сообщения */
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-input-row .form-input {
+  flex: 1;
+  padding: 9px 11px;
+  font-size: 13px;
+}
+
+/* Меню выбора товара для предложения клиенту */
+.offer-drawer {
+  background: #FFFDF9;
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeInScreen 0.18s ease-out;
+}
+
+.offer-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: var(--bg-soft);
+  border-radius: 10px;
+}
+
+.offer-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #FFFDF9;
+  flex-shrink: 0;
+}
+
+.offer-price-input {
+  width: 72px;
+  padding: 5px 6px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--text-main);
+}
