@@ -1,5 +1,5 @@
 import { FLOWERS_CATALOG, WRAPPINGS, RIBBONS } from '../config.js';
-import { gameState, saveState } from '../state.js';
+import { gameState, saveState, addGameMinutes } from '../state.js';
 import { getFlowerSvgDataUrl, getSingleFlowerWrappedSvg } from '../graphics/flowersSvg.js';
 import { playPaperSound, playShutterSound } from '../sound.js';
 
@@ -9,6 +9,12 @@ let selectedStemId = null;
 let draggingStem = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+
+let savedScreenScrollTop = 0;
+let savedTrayScrollLeft = 0;
+let savedWrapScrollLeft = 0;
+let savedRibbonScrollLeft = 0;
+let calcCounts = {};
 
 function getCachedFlowerImage(typeId, onLoadCallback) {
   if (imageCache[typeId]) return imageCache[typeId];
@@ -21,47 +27,69 @@ function getCachedFlowerImage(typeId, onLoadCallback) {
   return img;
 }
 
+function captureScrollPositions() {
+  const screen = document.getElementById('screen-shop');
+  const tray = document.querySelector('.flower-tray');
+  const wrapRows = document.querySelectorAll('.wrap-options-row');
+  if (screen) savedScreenScrollTop = screen.scrollTop;
+  if (tray) savedTrayScrollLeft = tray.scrollLeft;
+  if (wrapRows[0]) savedWrapScrollLeft = wrapRows[0].scrollLeft;
+  if (wrapRows[1]) savedRibbonScrollLeft = wrapRows[1].scrollLeft;
+}
+
+function restoreScrollPositions() {
+  const screen = document.getElementById('screen-shop');
+  const tray = document.querySelector('.flower-tray');
+  const wrapRows = document.querySelectorAll('.wrap-options-row');
+  if (screen) screen.scrollTop = savedScreenScrollTop;
+  if (tray) tray.scrollLeft = savedTrayScrollLeft;
+  if (wrapRows[0]) wrapRows[0].scrollLeft = savedWrapScrollLeft;
+  if (wrapRows[1]) wrapRows[1].scrollLeft = savedRibbonScrollLeft;
+}
+
 /** Добавить цветок из вазы в черновик букета */
-export function addFlowerToDraftBouquet(vaseUid, showToast) {
+export function addFlowerToDraftBouquet(vaseUid, showToast, count = 1, silent = false) {
   const vase = gameState.inventory.find((i) => i.uid === vaseUid);
   if (!vase || vase.qty <= 0) {
-    showToast('В этой вазе закончились цветы');
+    if (!silent) showToast('В этой вазе закончились цветы');
     return false;
   }
 
-  const draft = gameState.currentBouquet;
-  if (draft.stems.length >= 11) {
-    showToast('На столе максимум 11 стеблей в одном букете');
-    return false;
-  }
-
-  vase.qty -= 1;
+  const addQty = Math.min(count, vase.qty);
+  vase.qty -= addQty;
   if (vase.qty <= 0) {
     gameState.inventory = gameState.inventory.filter((i) => i.uid !== vaseUid);
   }
 
+  const draft = gameState.currentBouquet;
   const meta = FLOWERS_CATALOG[vase.typeId];
   const unitPrice = vase.discounted ? Math.round(meta.price * 0.6) : meta.price;
 
-  const index = draft.stems.length;
-  const spreadAngle = ((index % 5) - 2) * 0.16;
-  const newStem = {
-    id: 'stem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-    typeId: vase.typeId,
-    price: unitPrice,
-    freshness: vase.freshness,
-    discounted: vase.discounted,
-    x: 280 + ((index % 5) - 2) * 32,
-    y: 250 + Math.floor(index / 5) * 18,
-    angle: spreadAngle,
-    trimmed: false
-  };
+  for (let i = 0; i < addQty; i++) {
+    const index = draft.stems.length;
+    const col = index % 7;
+    const row = Math.floor(index / 7);
+    const spreadAngle = (col - 3) * 0.13;
+    const newStem = {
+      id: 'stem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      typeId: vase.typeId,
+      price: unitPrice,
+      freshness: vase.freshness,
+      discounted: vase.discounted,
+      x: 280 + (col - 3) * 24 + (row % 2 === 1 ? 10 : 0),
+      y: 235 + (row % 3) * 18,
+      angle: spreadAngle,
+      trimmed: false
+    };
+    draft.stems.push(newStem);
+    selectedStemId = newStem.id;
+  }
 
-  draft.stems.push(newStem);
-  selectedStemId = newStem.id;
   playPaperSound();
   saveState();
-  showToast(`+ ${meta.shortName} добавлен в букет`);
+  if (!silent) {
+    showToast(addQty > 1 ? `+ ${meta.shortName} (${addQty} шт.) добавлены` : `+ ${meta.shortName} добавлен в букет`);
+  }
   return true;
 }
 
@@ -74,21 +102,58 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         .map((item) => {
           const meta = FLOWERS_CATALOG[item.typeId];
           if (!meta) return '';
+          const unitPrice = item.discounted ? Math.round(meta.price * 0.6) : meta.price;
+          const freshClass = item.freshness >= 65 ? 'fresh-high' : item.freshness >= 35 ? 'fresh-mid' : 'fresh-low';
           return `
             <button class="tray-chip" data-add-vase="${item.uid}">
+              ${item.discounted ? '<span class="tray-discount-badge">-40%</span>' : ''}
               <div class="tray-chip-svg">${getSingleFlowerWrappedSvg(item.typeId)}</div>
               <span class="tray-chip-name">${meta.shortName}</span>
-              <span class="tray-chip-qty">${item.qty} шт</span>
+              <span class="tray-chip-qty">${item.qty} шт • ${unitPrice}₽</span>
+              <div class="freshness-bar-bg" style="height:4px;">
+                <div class="freshness-bar-fill ${freshClass}" style="width:${item.freshness}%"></div>
+              </div>
+              <span class="tray-chip-fresh">${item.freshness}%</span>
             </button>
           `;
         })
         .join('')
     : `<p class="muted-text">Вазы пусты</p>`;
 
+  const calcHtml = gameState.inventory.length
+    ? gameState.inventory
+        .map((item) => {
+          const meta = FLOWERS_CATALOG[item.typeId];
+          if (!meta) return '';
+          const unitPrice = item.discounted ? Math.round(meta.price * 0.6) : meta.price;
+          const val = calcCounts[item.uid] || '';
+          return `
+            <div class="calc-row">
+              <div style="flex:1; min-width:0;">
+                <strong style="font-size:12px;">${meta.name}</strong>
+                <div class="muted-text" style="font-size:10.5px;">${unitPrice} ₽/шт • В вазе: ${item.qty} (${item.freshness}%)</div>
+              </div>
+              <input
+                type="number"
+                class="calc-qty-input"
+                data-calc-uid="${item.uid}"
+                min="0"
+                max="${item.qty}"
+                value="${val}"
+                placeholder="0"
+                autocomplete="off"
+                data-form-type="other"
+              />
+            </div>
+          `;
+        })
+        .join('')
+    : `<p class="muted-text">Нет цветов для расчёта</p>`;
+
   const wrapsHtml = WRAPPINGS.map(
     (w) => `
       <button class="wrap-pill ${draft.wrappingId === w.id ? 'active' : ''}" data-wrap-id="${w.id}">
-        <span class="color-dot" style="background:${w.color === 'transparent' ? '#fff' : w.color};"></span>
+        <span class="color-dot" style="background:${w.type === 'none' ? '#fff' : w.type === 'clear' ? 'linear-gradient(135deg,#eef6fa,#fff)' : w.color};"></span>
         ${w.name} ${w.price > 0 ? `(+${w.price}₽)` : ''}
       </button>
     `
@@ -102,6 +167,10 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
       </button>
     `
   ).join('');
+
+  const selectedIndex = draft.stems.findIndex((s) => s.id === selectedStemId);
+  const canMoveUp = selectedIndex !== -1 && selectedIndex < draft.stems.length - 1;
+  const canMoveDown = selectedIndex > 0;
 
   const readyHtml =
     gameState.readyBouquets.length > 0
@@ -132,9 +201,9 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     <div class="bouquet-board-card">
       <div class="bouquet-canvas-wrap">
         <canvas id="bouquet-canvas" width="560" height="540"></canvas>
-        <div class="canvas-price-pill">💐 Итого: ${totalPrice} ₽</div>
+        <div class="canvas-price-pill">💐 На столе (${draft.stems.length} шт.): ${totalPrice} ₽</div>
         <div class="canvas-hint-pill">
-          ${activeTool === 'move' ? '✋ Тяни цветок по столу' : '✂️ Нажми на цветок, чтобы подрезать'}
+          ${activeTool === 'move' ? '✋ Тяни цветок • выбирай слой (время на паузе)' : '✂️ Нажми на цветок, чтобы подрезать'}
         </div>
       </div>
 
@@ -153,19 +222,35 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         </button>
       </div>
 
-      <div class="row-between" style="gap: 8px;">
-        <button class="btn btn-soft" id="btn-remove-stem" style="flex:1; padding:8px; font-size:12px;" ${!selectedStemId ? 'disabled' : ''}>
-          ↩️ Убрать стебель
+      <div class="maker-toolbar">
+        <button class="tool-btn" id="tool-layer-up" ${!canMoveUp ? 'disabled' : ''}>
+          <span>⬆️</span><span>Поверх</span>
         </button>
-        <button class="btn btn-soft" id="btn-clear-table" style="padding:8px 12px; font-size:12px;" ${draft.stems.length === 0 ? 'disabled' : ''}>
-          🧹 Разобрать
+        <button class="tool-btn" id="tool-layer-down" ${!canMoveDown ? 'disabled' : ''}>
+          <span>⬇️</span><span>Глубже</span>
+        </button>
+        <button class="tool-btn" id="btn-remove-stem" ${!selectedStemId ? 'disabled' : ''}>
+          <span>↩️</span><span>Убрать</span>
+        </button>
+        <button class="tool-btn" id="btn-clear-table" ${draft.stems.length === 0 ? 'disabled' : ''}>
+          <span>🧹</span><span>Очистить</span>
         </button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">🌷 Добавить цветы со склада</div>
+      <div class="card-title">🌷 Добавить по одному (свайпай полку)</div>
       <div class="flower-tray">${trayHtml}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧮 Калькулятор букета (введи количество)</div>
+      <div class="calc-list">${calcHtml}</div>
+      <div class="calc-summary-bar" id="calc-live-summary"></div>
+      <div class="row-between" style="gap:8px;">
+        <button class="btn btn-soft" id="btn-calc-reset" style="padding:8px 12px; font-size:12px;">Сброс</button>
+        <button class="btn btn-sage" id="btn-calc-apply" style="flex:1; padding:8px 12px; font-size:12.5px;">💐 Выложить на стол</button>
+      </div>
     </div>
 
     <div class="card">
@@ -186,7 +271,39 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     ${readyHtml}
   `;
 
-  setupCanvasAndEvents(container, showToast, onRefreshParent);
+  updateCalculatorSummary();
+  setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent);
+  restoreScrollPositions();
+}
+
+function updateCalculatorSummary() {
+  const summaryEl = document.getElementById('calc-live-summary');
+  if (!summaryEl) return;
+
+  const draft = gameState.currentBouquet;
+  const wrap = WRAPPINGS.find((w) => w.id === draft.wrappingId) || WRAPPINGS[0];
+  const ribbon = RIBBONS.find((r) => r.id === draft.ribbonId) || RIBBONS[0];
+
+  let count = 0;
+  let flowersSum = 0;
+  gameState.inventory.forEach((item) => {
+    const qty = Math.max(0, Math.min(item.qty, Number(calcCounts[item.uid]) || 0));
+    if (qty > 0) {
+      const meta = FLOWERS_CATALOG[item.typeId];
+      const unitPrice = item.discounted ? Math.round(meta.price * 0.6) : meta.price;
+      count += qty;
+      flowersSum += qty * unitPrice;
+    }
+  });
+
+  if (count === 0) {
+    summaryEl.innerHTML = `<span>Выбрано: 0 шт.</span><span>0 ₽</span>`;
+    return;
+  }
+
+  const craftBonus = count >= 3 ? 50 : 0;
+  const totalWithPack = flowersSum + wrap.price + ribbon.price + craftBonus;
+  summaryEl.innerHTML = `<span>${count} шт. + упаковка</span><span>Итого: ${totalWithPack} ₽</span>`;
 }
 
 function calculateBouquetPrice(draft) {
@@ -205,11 +322,16 @@ function calculateBouquetPrice(draft) {
   return flowersSum + wrap.price + ribbon.price + trimmedBonus + craftBonus;
 }
 
-function setupCanvasAndEvents(container, showToast, onRefreshParent) {
+function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent) {
   const canvas = document.getElementById('bouquet-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const draft = gameState.currentBouquet;
+
+  const refreshKeepingScroll = () => {
+    captureScrollPositions();
+    onRefreshParent();
+  };
 
   draft.stems.forEach((s) => getCachedFlowerImage(s.typeId, () => drawBouquetCanvas(ctx, canvas)));
   drawBouquetCanvas(ctx, canvas);
@@ -242,7 +364,7 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
         playPaperSound();
         saveState();
         showToast('✂️ Стебель подрезан! (+15 ₽ к ценности)');
-        onRefreshParent();
+        refreshKeepingScroll();
       } else {
         showToast('Этот стебель уже аккуратно подрезан');
       }
@@ -259,8 +381,8 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
   canvas.addEventListener('pointermove', (e) => {
     if (!draggingStem) return;
     const pt = getCanvasPoint(e);
-    draggingStem.x = Math.max(95, Math.min(465, pt.x - dragOffsetX));
-    draggingStem.y = Math.max(120, Math.min(395, pt.y - dragOffsetY));
+    draggingStem.x = Math.max(85, Math.min(475, pt.x - dragOffsetX));
+    draggingStem.y = Math.max(115, Math.min(400, pt.y - dragOffsetY));
     drawBouquetCanvas(ctx, canvas);
   });
 
@@ -268,18 +390,18 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     if (draggingStem) {
       draggingStem = null;
       saveState();
-      onRefreshParent();
+      refreshKeepingScroll();
     }
   });
 
   document.getElementById('tool-move')?.addEventListener('click', () => {
     activeTool = 'move';
-    onRefreshParent();
+    refreshKeepingScroll();
   });
 
   document.getElementById('tool-scissors')?.addEventListener('click', () => {
     activeTool = 'scissors';
-    onRefreshParent();
+    refreshKeepingScroll();
   });
 
   document.getElementById('tool-rot-left')?.addEventListener('click', () => {
@@ -298,6 +420,24 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     drawBouquetCanvas(ctx, canvas);
   });
 
+  document.getElementById('tool-layer-up')?.addEventListener('click', () => {
+    const idx = draft.stems.findIndex((s) => s.id === selectedStemId);
+    if (idx === -1 || idx >= draft.stems.length - 1) return;
+    const [stem] = draft.stems.splice(idx, 1);
+    draft.stems.splice(idx + 1, 0, stem);
+    saveState();
+    refreshKeepingScroll();
+  });
+
+  document.getElementById('tool-layer-down')?.addEventListener('click', () => {
+    const idx = draft.stems.findIndex((s) => s.id === selectedStemId);
+    if (idx <= 0) return;
+    const [stem] = draft.stems.splice(idx, 1);
+    draft.stems.splice(idx - 1, 0, stem);
+    saveState();
+    refreshKeepingScroll();
+  });
+
   document.getElementById('btn-remove-stem')?.addEventListener('click', () => {
     const stem = draft.stems.find((s) => s.id === selectedStemId);
     if (!stem) return;
@@ -306,7 +446,7 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     selectedStemId = null;
     saveState();
     showToast('Стебель возвращён в вазу');
-    onRefreshParent();
+    refreshKeepingScroll();
   });
 
   document.getElementById('btn-clear-table')?.addEventListener('click', () => {
@@ -315,15 +455,53 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     selectedStemId = null;
     saveState();
     showToast('Все цветы возвращены в вазы');
-    onRefreshParent();
+    refreshKeepingScroll();
   });
 
   container.querySelectorAll('[data-add-vase]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      captureScrollPositions();
       if (addFlowerToDraftBouquet(btn.dataset.addVase, showToast)) {
         onRefreshParent();
       }
     });
+  });
+
+  container.querySelectorAll('[data-calc-uid]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const uid = input.dataset.calcUid;
+      const max = Number(input.max) || 999;
+      let val = parseInt(input.value, 10);
+      if (isNaN(val) || val < 0) val = 0;
+      if (val > max) {
+        val = max;
+        input.value = String(max);
+      }
+      calcCounts[uid] = val;
+      updateCalculatorSummary();
+    });
+  });
+
+  document.getElementById('btn-calc-reset')?.addEventListener('click', () => {
+    calcCounts = {};
+    refreshKeepingScroll();
+  });
+
+  document.getElementById('btn-calc-apply')?.addEventListener('click', () => {
+    let addedTotal = 0;
+    Object.entries(calcCounts).forEach(([uid, qty]) => {
+      const num = Number(qty) || 0;
+      if (num > 0 && addFlowerToDraftBouquet(uid, showToast, num, true)) {
+        addedTotal += num;
+      }
+    });
+    if (addedTotal === 0) {
+      showToast('Введи количество цветов в калькуляторе');
+      return;
+    }
+    calcCounts = {};
+    showToast(`💐 Выложено на стол: ${addedTotal} шт.`);
+    refreshKeepingScroll();
   });
 
   container.querySelectorAll('[data-wrap-id]').forEach((btn) => {
@@ -331,7 +509,7 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
       draft.wrappingId = btn.dataset.wrapId;
       playPaperSound();
       saveState();
-      onRefreshParent();
+      refreshKeepingScroll();
     });
   });
 
@@ -340,11 +518,10 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
       draft.ribbonId = btn.dataset.ribbonId;
       playPaperSound();
       saveState();
-      onRefreshParent();
+      refreshKeepingScroll();
     });
   });
 
-  // Редактировать готовый букет
   container.querySelectorAll('[data-edit-bouquet]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const bId = btn.dataset.editBouquet;
@@ -366,9 +543,9 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
             price: meta ? meta.price : 200,
             freshness: 85,
             discounted: false,
-            x: 280 + ((index % 5) - 2) * 32,
-            y: 250 + Math.floor(index / 5) * 18,
-            angle: ((index % 5) - 2) * 0.16,
+            x: 280 + ((index % 7) - 3) * 24,
+            y: 240 + Math.floor(index / 7) * 18,
+            angle: ((index % 7) - 3) * 0.13,
             trimmed: false
           };
         });
@@ -381,11 +558,10 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
       playPaperSound();
       saveState();
       showToast('✏️ Букет возвращён на стол для редактирования');
-      onRefreshParent();
+      refreshKeepingScroll();
     });
   });
 
-  // Разобрать готовый букет обратно в вазы
   container.querySelectorAll('[data-del-bouquet]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const bId = btn.dataset.delBouquet;
@@ -401,7 +577,7 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
       gameState.readyBouquets = gameState.readyBouquets.filter((b) => b.id !== bId);
       saveState();
       showToast('Букет разобран, цветы снова в вазах');
-      onRefreshParent();
+      refreshKeepingScroll();
     });
   });
 
@@ -418,8 +594,10 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     gameState.savedPhotos.unshift({
       id: 'photo_' + Date.now(),
       dataUrl,
+      type: 'bouquet',
       price: calculateBouquetPrice(draft),
       stemsCount: draft.stems.length,
+      items: draft.stems.map((s) => s.typeId),
       description: describeBouquet(draft),
       day: gameState.day
     });
@@ -453,9 +631,14 @@ function setupCanvasAndEvents(container, showToast, onRefreshParent) {
     draft.stems = [];
     selectedStemId = null;
     playPaperSound();
-    saveState();
-    showToast(`💐 Букет за ${ready.price} ₽ готов к продаже!`);
-    onRefreshParent();
+    const justClosed = addGameMinutes(20);
+    onHudUpdate();
+    if (justClosed) {
+      showToast('🌙 Смена закончилась! Пора пойти домой поспать — иначе завтра будешь уставшим.');
+    } else {
+      showToast(`💐 Букет за ${ready.price} ₽ готов (+20 мин)!`);
+    }
+    refreshKeepingScroll();
   });
 }
 
@@ -491,11 +674,8 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
   const wrap = WRAPPINGS.find((wp) => wp.id === draft.wrappingId) || WRAPPINGS[0];
   const ribbon = RIBBONS.find((rb) => rb.id === draft.ribbonId) || RIBBONS[0];
 
-  if (wrap.id !== 'none') {
+  if (wrap.type !== 'none') {
     ctx.save();
-    ctx.fillStyle = wrap.color;
-    ctx.strokeStyle = wrap.accent;
-    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(145, 225);
     ctx.lineTo(280, 165);
@@ -503,8 +683,36 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     ctx.lineTo(318, 465);
     ctx.lineTo(242, 465);
     ctx.closePath();
+
+    ctx.fillStyle = wrap.color;
     ctx.fill();
+    ctx.strokeStyle = wrap.accent;
+    ctx.lineWidth = 3;
     ctx.stroke();
+
+    if (wrap.type === 'newspaper') {
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(110, 96, 84, 0.25)';
+      ctx.lineWidth = 2;
+      for (let y = 185; y < 440; y += 16) {
+        ctx.beginPath();
+        ctx.moveTo(160, y);
+        ctx.lineTo(400, y - 8);
+        ctx.stroke();
+      }
+    } else if (wrap.type === 'mesh') {
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(223, 171, 78, 0.4)';
+      ctx.lineWidth = 1.5;
+      for (let i = -150; i < 550; i += 22) {
+        ctx.beginPath();
+        ctx.moveTo(i, 160);
+        ctx.lineTo(i + 180, 470);
+        ctx.moveTo(i + 180, 160);
+        ctx.lineTo(i, 470);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
 
@@ -532,26 +740,60 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     ctx.restore();
   });
 
-  if (wrap.id !== 'none') {
+  if (wrap.type !== 'none') {
     ctx.save();
-    ctx.fillStyle = wrap.accent;
-    ctx.globalAlpha = 0.88;
-    ctx.beginPath();
-    ctx.moveTo(165, 275);
-    ctx.lineTo(280, 355);
-    ctx.lineTo(312, 465);
-    ctx.lineTo(245, 465);
-    ctx.closePath();
-    ctx.fill();
+    if (wrap.type === 'clear') {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.strokeStyle = 'rgba(195, 222, 236, 0.9)';
+      ctx.lineWidth = 2;
 
-    ctx.fillStyle = wrap.color;
-    ctx.beginPath();
-    ctx.moveTo(395, 275);
-    ctx.lineTo(280, 355);
-    ctx.lineTo(245, 465);
-    ctx.lineTo(315, 465);
-    ctx.closePath();
-    ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(165, 275);
+      ctx.lineTo(280, 355);
+      ctx.lineTo(315, 465);
+      ctx.lineTo(245, 465);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(395, 275);
+      ctx.lineTo(280, 355);
+      ctx.lineTo(245, 465);
+      ctx.lineTo(315, 465);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(205, 315);
+      ctx.lineTo(245, 370);
+      ctx.moveTo(360, 310);
+      ctx.lineTo(315, 385);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = wrap.accent;
+      ctx.globalAlpha = wrap.type === 'mesh' ? 0.65 : 0.9;
+      ctx.beginPath();
+      ctx.moveTo(165, 275);
+      ctx.lineTo(280, 355);
+      ctx.lineTo(312, 465);
+      ctx.lineTo(245, 465);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = wrap.color;
+      ctx.beginPath();
+      ctx.moveTo(395, 275);
+      ctx.lineTo(280, 355);
+      ctx.lineTo(245, 465);
+      ctx.lineTo(315, 465);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -589,7 +831,7 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     ctx.fillStyle = 'rgba(74, 62, 57, 0.5)';
     ctx.font = 'bold 18px Georgia, serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Fleur Atelier 🌸', w - 20, h - 18);
+    ctx.fillText(`${gameState.shopName || 'Fleur Atelier'} 🌸`, w - 20, h - 18);
     ctx.restore();
   }
 }

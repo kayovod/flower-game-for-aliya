@@ -1,5 +1,5 @@
-import { AI_PROVIDERS, getGameDateObj, getHolidayForDate } from '../config.js';
-import { gameState, aiSettings, saveState, saveAiSettings, resetState } from '../state.js';
+import { AI_PROVIDERS, getGameDateObj, getHolidayForDate, getSeasonInfo } from '../config.js';
+import { gameState, aiSettings, saveState, saveAiSettings, resetState, setCurrentGameDate } from '../state.js';
 import { testAiConnection } from '../ai.js';
 import { setAmbientMode, stopAmbient } from '../sound.js';
 
@@ -46,7 +46,7 @@ function renderFinanceTab(body) {
   const todayHoliday = getHolidayForDate(curDate);
   const holidayText = todayHoliday
     ? `🎉 Сегодня ${todayHoliday.name}! Спрос x3, цены поставщиков x2.`
-    : 'Ближайшие крупные праздники: 14 Февраля и 8 Марта (спрос x3).';
+    : 'Ближайшие крупные праздники: 14 Февраля, 8 Марта, 1 Сентября и др.';
 
   const balanceBadge =
     gameState.money >= 0
@@ -105,7 +105,45 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
     )
     .join('');
 
+  const curDateObj = getGameDateObj(gameState.startDate, gameState.day - 1);
+  const curDateStr = `${curDateObj.getFullYear()}-${String(curDateObj.getMonth() + 1).padStart(2, '0')}-${String(curDateObj.getDate()).padStart(2, '0')}`;
+  const curSeason = getSeasonInfo(curDateObj);
+
   body.innerHTML = `
+    <div class="card">
+      <div class="row-between">
+        <div class="card-title">🏪 Лавка, график и дата</div>
+        <span class="badge badge-ok">${curSeason.label}</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="set-shop-name">Название магазина</label>
+        <input type="text" class="form-input" id="set-shop-name" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.shopName || 'Fleur Atelier')}" maxlength="24" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="set-insta-handle">Ник канала в InstaFlower</label>
+        <input type="text" class="form-input" id="set-insta-handle" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.instaHandle || '@fleur_atelier')}" maxlength="24" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="set-current-date">Дата и время года за окном</label>
+        <input type="date" class="form-input" id="set-current-date" value="${curDateStr}" />
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group">
+          <label class="form-label" for="set-open-hour">Открытие</label>
+          <select class="form-select" id="set-open-hour">
+            ${[7, 8, 9, 10, 11].map((h) => `<option value="${h}" ${(gameState.openHour || 9) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="set-close-hour">Закрытие</label>
+          <select class="form-select" id="set-close-hour">
+            ${[18, 19, 20, 21, 22, 23].map((h) => `<option value="${h}" ${(gameState.closeHour || 21) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-save-shop-profile">💾 Сохранить параметры лавки</button>
+    </div>
+
     <div class="card">
       <div class="card-title">🔊 Звук и Фоновая музыка</div>
       <button class="btn ${gameState.soundEnabled ? 'btn-sage' : 'btn-soft'}" id="btn-toggle-sound">
@@ -127,7 +165,7 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
       <div class="form-group">
         <label class="form-label" for="pet-name-input">Имя кошки</label>
         <div style="display:flex; gap:6px;">
-          <input type="text" class="form-input" id="pet-name-input" value="${escapeAttr(gameState.petName || 'Пискля')}" maxlength="20" style="flex:1;" />
+          <input type="text" class="form-input" id="pet-name-input" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.petName || 'Пискля')}" maxlength="20" style="flex:1;" />
           <button class="btn btn-primary" id="btn-save-pet-name" style="padding:10px 14px;">Сохранить</button>
         </div>
       </div>
@@ -136,7 +174,7 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
     <div class="card">
       <div class="card-title">🧠 Настройка ИИ и API-ключа</div>
       <p class="muted-text">
-        Ключ сохраняется только в памяти твоего браузера. Рекомендуется OpenRouter с моделью <code>baidu/ernie-5.5-flash-preview:free</code>.
+        Ключ сохраняется только в памяти твоего браузера. Рекомендуется Gemini или OpenRouter.
       </p>
 
       <div class="form-group">
@@ -149,11 +187,14 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
           <label class="form-label" for="ai-api-key">API-ключ</label>
           <div style="display: flex; gap: 6px; align-items: center;">
             <input
-              type="password"
-              class="form-input"
+              type="text"
+              class="form-input masked-input"
               id="ai-api-key"
               name="fleur-custom-key"
-              autocomplete="new-password"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+              data-form-type="other"
               data-lpignore="true"
               placeholder="Вставь ключ (sk-or-..., sk-..., AIza...)"
               value="${escapeAttr(aiSettings.apiKey)}"
@@ -171,6 +212,9 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
             type="text"
             class="form-input"
             id="ai-model-input"
+            autocomplete="off"
+            data-form-type="other"
+            data-lpignore="true"
             placeholder="${selectedProvider.defaultModel}"
             value="${escapeAttr(aiSettings.model || selectedProvider.defaultModel)}"
           />
@@ -183,6 +227,9 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
               type="text"
               class="form-input"
               id="ai-baseurl-input"
+              autocomplete="off"
+              data-form-type="other"
+              data-lpignore="true"
               placeholder="${selectedProvider.defaultBaseUrl}"
               value="${escapeAttr(aiSettings.baseUrl || selectedProvider.defaultBaseUrl)}"
             />
@@ -287,9 +334,8 @@ function setupAiForm(showToast) {
 
   const toggleEyeBtn = document.getElementById('btn-toggle-key-eye');
   toggleEyeBtn?.addEventListener('click', () => {
-    const isHidden = keyInput.type === 'password';
-    keyInput.type = isHidden ? 'text' : 'password';
-    toggleEyeBtn.textContent = isHidden ? '🙈' : '👁️';
+    const isHidden = keyInput.classList.toggle('masked-input');
+    toggleEyeBtn.textContent = isHidden ? '👁️' : '🙈';
   });
 
   select.addEventListener('change', () => {
@@ -349,7 +395,30 @@ function setupGameControls(onHudUpdate, showToast) {
   const ambientSelect = document.getElementById('ambient-mode-select');
   const petInput = document.getElementById('pet-name-input');
   const savePetBtn = document.getElementById('btn-save-pet-name');
+  const saveShopBtn = document.getElementById('btn-save-shop-profile');
   const resetBtn = document.getElementById('btn-reset-game');
+
+  saveShopBtn?.addEventListener('click', () => {
+    const shopName = document.getElementById('set-shop-name')?.value.trim() || 'Fleur Atelier';
+    let insta = document.getElementById('set-insta-handle')?.value.trim() || '@fleur_atelier';
+    if (!insta.startsWith('@')) insta = '@' + insta;
+    const openHour = Number(document.getElementById('set-open-hour')?.value) || 9;
+    const closeHour = Number(document.getElementById('set-close-hour')?.value) || 21;
+    const newDate = document.getElementById('set-current-date')?.value;
+
+    gameState.shopName = shopName;
+    gameState.instaHandle = insta;
+    gameState.openHour = openHour;
+    gameState.closeHour = closeHour;
+    gameState.shownCloseHint = (gameState.timeMinutes || 540) >= closeHour * 60;
+
+    if (newDate) setCurrentGameDate(newDate);
+    else saveState();
+
+    onHudUpdate();
+    renderSettingsTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
+    showToast(`✨ Настройки лавки «${shopName}» и дата обновлены!`);
+  });
 
   soundBtn.addEventListener('click', () => {
     gameState.soundEnabled = !gameState.soundEnabled;

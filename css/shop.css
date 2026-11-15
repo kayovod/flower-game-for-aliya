@@ -478,3 +478,117 @@
   flex-direction: column;
   gap: 11px;
 }
+
+/* Очередь предзаказов в зале */
+.preorders-queue-card {
+  background: rgba(255, 253, 249, 0.94);
+  border: 1.5px solid #D9C3B4;
+  border-radius: 14px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preorder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.preorder-row.due-now {
+  background: #FDF2DD;
+  border: 1px solid #E5B968;
+}
+
+/* Панель отказа живому клиенту в зале */
+.client-reject-panel {
+  background: #FFF7F5;
+  border: 1.5px dashed #E4A89D;
+  border-radius: 12px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.client-reject-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.client-reject-chip {
+  border: 1px solid #E4C3BC;
+  background: #FFFFFF;
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.client-reject-chip:hover {
+  background: #FCEAE6;
+  border-color: var(--primary);
+}
+
+/* Декор торгового зала (Этап 6) */
+.shop-decor-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shop-hearts-garland {
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 5px;
+  filter: drop-shadow(0 2px 3px rgba(217, 138, 124, 0.35));
+}
+
+.shop-ivy-arch {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.shop-decor-shelf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  background: rgba(255, 253, 249, 0.72);
+  border: 1px dashed var(--border-soft);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.shop-decor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #FFFDF9;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+}

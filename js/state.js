@@ -14,7 +14,9 @@ export function createInitialInventory() {
     { uid: 'vase_3', typeId: 'tulip_yellow', qty: 10, freshness: 72, discounted: false, wateredThisShift: false },
     { uid: 'vase_4', typeId: 'chamomile_white', qty: 15, freshness: 52, discounted: false, wateredThisShift: false },
     { uid: 'vase_5', typeId: 'lavender_purple', qty: 9, freshness: 98, discounted: false, wateredThisShift: false },
-    { uid: 'vase_6', typeId: 'lily_white', qty: 6, freshness: 85, discounted: false, wateredThisShift: false }
+    { uid: 'vase_6', typeId: 'lily_white', qty: 6, freshness: 85, discounted: false, wateredThisShift: false },
+    { uid: 'vase_7', typeId: 'gypsophila', qty: 10, freshness: 94, discounted: false, wateredThisShift: false },
+    { uid: 'vase_8', typeId: 'eucalyptus', qty: 10, freshness: 96, discounted: false, wateredThisShift: false }
   ];
 }
 
@@ -33,6 +35,7 @@ export function createInitialState() {
     day: 1,
     timeIndex: 0, // 0: Утро, 1: День, 2: Вечер
     timeMinutes: 9 * 60,
+    shownCloseHint: false,
     weather: getWeatherForSeason(season.id),
     followers: 0,
     mood: 85,
@@ -53,7 +56,10 @@ export function createInitialState() {
       ribbonId: 'satin_rose'
     },
     instaPosts: [],
+    activePromo: null,
     directMessages: [],
+    preorders: [],
+    lastAutoDmKey: '',
     wholesaleDay: 0,
     wholesaleDeals: [],
     energy: 100,
@@ -63,7 +69,8 @@ export function createInitialState() {
     powerOutage: false,
     candlesLit: false,
     rentWarning: false,
-    decor: []
+    decor: [],
+    hiddenDecor: []
   };
 }
 
@@ -91,22 +98,33 @@ export function loadState() {
     }
     if (!Array.isArray(state.readyBouquets)) state.readyBouquets = [];
     if (!Array.isArray(state.savedPhotos)) state.savedPhotos = [];
-    if (!Array.isArray(state.instaPosts)) state.instaPosts = [];
+   if (!Array.isArray(state.instaPosts)) state.instaPosts = [];
+    if (!state.activePromo || typeof state.activePromo !== 'object') state.activePromo = null;
     if (!Array.isArray(state.directMessages)) state.directMessages = [];
+    if (!Array.isArray(state.preorders)) state.preorders = [];
+    if (typeof state.lastAutoDmKey !== 'string') state.lastAutoDmKey = '';
+    state.directMessages = state.directMessages.map((dm) => ({
+      read: Boolean(dm.replyText || dm.rejected || (dm.order && dm.order.done)),
+      thread: Array.isArray(dm.thread) ? dm.thread : [],
+      blockedByPlayer: Boolean(dm.blockedByPlayer),
+      blockedByClient: Boolean(dm.blockedByClient),
+      ...dm
+    }));
     if (!Array.isArray(state.wholesaleDeals)) state.wholesaleDeals = [];
     if (!Array.isArray(state.decor)) state.decor = [];
+    if (!Array.isArray(state.hiddenDecor)) state.hiddenDecor = [];
     if (!state.currentBouquet || !Array.isArray(state.currentBouquet.stems)) {
       state.currentBouquet = { stems: [], wrappingId: 'craft', ribbonId: 'satin_rose' };
     }
     if (typeof state.timeMinutes !== 'number') {
       state.timeMinutes = (state.openHour || 9) * 60;
     }
+    if (typeof state.shownCloseHint !== 'boolean') state.shownCloseHint = false;
     if (!state.petName) state.petName = 'Пискля';
     if (!state.shopName) state.shopName = 'Fleur Atelier';
     if (!state.instaHandle) state.instaHandle = '@fleur_atelier';
     if (!state.startDate) state.startDate = '2026-02-08';
 
-    // Если старый сейв с прогрессом — не мешаем, а если свежий День 1 — покажем окно настройки
     if (typeof parsed.isSetupDone !== 'boolean') {
       state.isSetupDone = state.day > 1 || state.bouquetsSold > 0;
     }
@@ -154,23 +172,75 @@ export function saveAiSettings(newSettings) {
   }
 }
 
-/** Продвинуть время на следующую смену в рамках часов работы */
+/** Проверка, закрыт ли магазин по времени */
+export function isShopClosedNow() {
+  const closeMin = (gameState.closeHour || 21) * 60;
+  return (gameState.timeMinutes || 540) >= closeMin;
+}
+
+/** Синхронизация Утро/День/Вечер с часами */
+export function syncTimeIndexWithMinutes() {
+  const openMin = (gameState.openHour || 9) * 60;
+  const closeMin = (gameState.closeHour || 21) * 60;
+  const span = Math.max(120, closeMin - openMin);
+  const cur = gameState.timeMinutes || openMin;
+
+  if (cur < openMin + span * 0.35) {
+    gameState.timeIndex = 0;
+  } else if (cur < openMin + span * 0.72) {
+    gameState.timeIndex = 1;
+  } else {
+    gameState.timeIndex = 2;
+  }
+}
+
+/** Прибавить минуты к игровым часам (возвращает true, если лавка впервые закрылась) */
+export function addGameMinutes(mins) {
+  const wasClosed = isShopClosedNow();
+  const maxMin = 23 * 60 + 55; // Останавливаемся перед полуночью, пока игрок сам не ляжет спать
+  gameState.timeMinutes = Math.min(maxMin, (gameState.timeMinutes || 540) + mins);
+  syncTimeIndexWithMinutes();
+
+  const justClosed = !wasClosed && isShopClosedNow() && !gameState.shownCloseHint;
+  if (justClosed) {
+    gameState.shownCloseHint = true;
+  }
+  saveState();
+  return justClosed;
+}
+
+/** Изменение текущей игровой даты с пересчётом сезона и погоды */
+export function setCurrentGameDate(targetDateStr) {
+  const parts = String(targetDateStr || '').split('-').map(Number);
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
+
+  const target = new Date(parts[0], parts[1] - 1, parts[2]);
+  const newStart = new Date(target.getFullYear(), target.getMonth(), target.getDate() - (gameState.day - 1));
+  const y = newStart.getFullYear();
+  const m = String(newStart.getMonth() + 1).padStart(2, '0');
+  const d = String(newStart.getDate()).padStart(2, '0');
+
+  gameState.startDate = `${y}-${m}-${d}`;
+  const season = getSeasonInfo(target);
+  gameState.weather = getWeatherForSeason(season.id);
+  saveState();
+}
+
+/** Продвинуть смену (Утро -> День -> Вечер -> Закрытие, без телепортации домой) */
 export function advanceShift() {
   const openMin = (gameState.openHour || 9) * 60;
   const closeMin = (gameState.closeHour || 21) * 60;
   const midMin = Math.round((openMin + closeMin) / 2);
   const eveMin = Math.max(openMin + 60, closeMin - 90);
 
-  gameState.timeIndex += 1;
-  if (gameState.timeIndex > 2) {
-    gameState.timeIndex = 0;
-    gameState.timeMinutes = openMin;
-    gameState.day += 1;
-    gameState.daysUntilRent = Math.max(0, gameState.daysUntilRent - 1);
-    const season = getSeasonInfo(getGameDateObj(gameState.startDate, gameState.day - 1));
-    gameState.weather = getWeatherForSeason(season.id);
+  if (gameState.timeIndex === 0) {
+    gameState.timeIndex = 1;
+    gameState.timeMinutes = Math.max(gameState.timeMinutes, midMin);
+  } else if (gameState.timeIndex === 1) {
+    gameState.timeIndex = 2;
+    gameState.timeMinutes = Math.max(gameState.timeMinutes, eveMin);
   } else {
-    gameState.timeMinutes = gameState.timeIndex === 1 ? midMin : eveMin;
+    gameState.timeMinutes = Math.max(gameState.timeMinutes, closeMin);
   }
 
   const fridgeFactor = gameState.hasFridge ? 0.65 : 1;

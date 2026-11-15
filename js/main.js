@@ -1,15 +1,26 @@
 import { WEATHERS, getGameDateObj, getSeasonInfo, getWeatherForSeason } from './config.js';
-import { gameState, saveState } from './state.js';
-import { renderShopScreen } from './screens/shopScreen.js';
+import { gameState, saveState, addGameMinutes, isShopClosedNow } from './state.js';
+import { generateDirectMessage } from './ai.js';
+import {
+  renderShopScreen,
+  isBouquetMakerOpen,
+  isClientTalkingNow,
+  checkPreorderArrival
+} from './screens/shopScreen.js';
 import { renderPhoneScreen } from './screens/phoneScreen.js';
 import { renderHomeScreen } from './screens/homeScreen.js';
 import { renderFinanceSettingsScreen } from './screens/financeSettingsScreen.js';
-import { playClickSound, setAmbientMode } from './sound.js';
+import { playClickSound, playBellSound, setAmbientMode } from './sound.js';
 
 const AUTH_UNLOCK_KEY = 'fleur_atelier_unlocked_v1';
 const SECRET_PASSWORD = 'ШамильАлияНавсегда';
 
 let ambientStarted = false;
+let activeToastTimer = null;
+let currentNavTab = 'shop';
+let clockTimerId = null;
+let isAutoDmPending = false;
+let nextAutoDmRealMs = Date.now() + 26000;
 
 function checkPasswordAndStart() {
   let isUnlocked = false;
@@ -44,10 +55,14 @@ function showPasswordLockScreen() {
         <label class="form-label" for="lock-password-input">Секретный пароль</label>
         <div style="display: flex; gap: 6px; align-items: center;">
           <input
-            type="password"
-            class="form-input"
+            type="text"
+            class="form-input masked-input"
             id="lock-password-input"
             autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+            data-form-type="other"
+            data-lpignore="true"
             placeholder="Введи пароль..."
             style="flex: 1;"
           />
@@ -73,9 +88,8 @@ function showPasswordLockScreen() {
   const errorMsg = document.getElementById('lock-error-msg');
 
   eyeBtn.addEventListener('click', () => {
-    const hidden = input.type === 'password';
-    input.type = hidden ? 'text' : 'password';
-    eyeBtn.textContent = hidden ? '🙈' : '👁️';
+    const isHidden = input.classList.toggle('masked-input');
+    eyeBtn.textContent = isHidden ? '👁️' : '🙈';
   });
 
   const tryUnlock = () => {
@@ -104,8 +118,91 @@ function initApp() {
   setupNavigation();
   setupGlobalClickSounds();
   renderAll();
+  startGameClock();
   if (!gameState.isSetupDone) {
     showWelcomeSetupModal();
+  }
+}
+
+function startGameClock() {
+  if (clockTimerId) clearInterval(clockTimerId);
+  clockTimerId = setInterval(() => {
+    if (document.querySelector('.setup-modal-overlay, .vase-modal-overlay, .polaroid-overlay')) return;
+    if (currentNavTab === 'finance') return;
+
+    const onBouquetTable = currentNavTab === 'shop' && isBouquetMakerOpen();
+    if (!onBouquetTable) {
+      const justClosed = addGameMinutes(5);
+      updateHud();
+
+      if (justClosed) {
+        showToast('🌙 Смена закончилась! Пора пойти домой поспать — иначе завтра будешь уставшим.');
+        if (currentNavTab === 'shop' && !isClientTalkingNow()) {
+          renderShopScreen(updateHud, showToast);
+        }
+      }
+    }
+
+    if (!isShopClosedNow()) {
+      if (!onBouquetTable) {
+        checkPreorderArrival(updateHud, showToast);
+      }
+      maybeReceiveAutoDirectMessage();
+    }
+  }, 8000);
+}
+
+/** Автоматический приход сообщений и предзаказов в Direct по ходу дня */
+async function maybeReceiveAutoDirectMessage() {
+  if (isAutoDmPending) return;
+  const now = Date.now();
+  if (now < nextAutoDmRealMs) return;
+
+  const unreadCount = (gameState.directMessages || []).filter((m) => !m.read).length;
+  if (unreadCount >= 3) {
+    nextAutoDmRealMs = now + 35000;
+    return;
+  }
+
+  const followers = gameState.followers || 0;
+  const hasPromoToday = gameState.activePromo && gameState.activePromo.day === gameState.day;
+  const speedReduction = Math.min(35000, followers * 400);
+  const promoMult = hasPromoToday ? 0.78 : 1;
+
+  const minWait = Math.round((65000 - speedReduction) * promoMult);
+  const maxWait = Math.round((95000 - speedReduction) * promoMult);
+  nextAutoDmRealMs = now + minWait + Math.floor(Math.random() * Math.max(8000, maxWait - minWait));
+
+  isAutoDmPending = true;
+  try {
+    const dm = await generateDirectMessage();
+    dm.read = false;
+    gameState.directMessages.unshift(dm);
+    if (gameState.directMessages.length > 14) {
+      const important = gameState.directMessages.filter(
+        (m) => !m.read || (m.order && m.order.accepted && !m.order.done)
+      );
+      const rest = gameState.directMessages.filter(
+        (m) => m.read && !(m.order && m.order.accepted && !m.order.done)
+      );
+      gameState.directMessages = [...important, ...rest].slice(0, Math.max(14, important.length));
+    }
+    saveState();
+    updateHud();
+    playBellSound();
+    showToast(`📩 Новое сообщение в Direct от ${dm.senderName}!`);
+
+    const isTypingInPhone =
+      currentNavTab === 'phone' &&
+      document.activeElement &&
+      document.activeElement.tagName === 'INPUT';
+    if (currentNavTab === 'phone' && !isTypingInPhone) {
+      renderPhoneScreen(updateHud, showToast);
+    }
+  } catch (err) {
+    console.warn('Не удалось получить авто-сообщение Direct:', err);
+  } finally {
+    isAutoDmPending = false;
   }
 }
 
@@ -137,6 +234,7 @@ function setupNavigation() {
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = btn.dataset.target;
+      currentNavTab = target;
 
       navButtons.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
@@ -147,6 +245,7 @@ function setupNavigation() {
 
       if (target === 'shop') {
         renderShopScreen(updateHud, showToast);
+        checkPreorderArrival(updateHud, showToast);
       } else if (target === 'phone') {
         renderPhoneScreen(updateHud, showToast);
       } else if (target === 'home') {
@@ -175,12 +274,12 @@ function showWelcomeSetupModal() {
 
       <div class="form-group">
         <label class="form-label" for="setup-shop-name">Название цветочного магазина</label>
-        <input type="text" class="form-input" id="setup-shop-name" value="${escapeAttr(gameState.shopName || 'Fleur Atelier')}" maxlength="24" />
+        <input type="text" class="form-input" id="setup-shop-name" autocomplete="off" data-form-type="other" value="${escapeAttr(gameState.shopName || 'Fleur Atelier')}" maxlength="24" />
       </div>
 
       <div class="form-group">
         <label class="form-label" for="setup-insta-handle">Ник канала в InstaFlower</label>
-        <input type="text" class="form-input" id="setup-insta-handle" value="${escapeAttr(gameState.instaHandle || '@fleur_atelier')}" maxlength="24" />
+        <input type="text" class="form-input" id="setup-insta-handle" autocomplete="off" data-form-type="other" value="${escapeAttr(gameState.instaHandle || '@fleur_atelier')}" maxlength="24" />
       </div>
 
       <div class="form-group">
@@ -232,6 +331,7 @@ function showWelcomeSetupModal() {
     gameState.openHour = openHour;
     gameState.closeHour = closeHour;
     gameState.timeMinutes = openHour * 60;
+    gameState.shownCloseHint = false;
 
     const season = getSeasonInfo(getGameDateObj(startDate, 0));
     gameState.weather = getWeatherForSeason(season.id);
@@ -250,6 +350,7 @@ export function updateHud() {
   const weatherEl = document.getElementById('hud-weather');
   const followersEl = document.getElementById('hud-followers');
   const moodEl = document.getElementById('hud-mood');
+  const phoneBadge = document.getElementById('phone-nav-badge');
 
   const weatherObj = WEATHERS.find((w) => w.id === gameState.weather) || WEATHERS[0];
 
@@ -269,19 +370,37 @@ export function updateHud() {
   weatherEl.textContent = `${weatherObj.icon} ${weatherObj.label}`;
   followersEl.textContent = `🌸 ${gameState.followers} подп.`;
   moodEl.textContent = `✨ Атмосфера: ${gameState.mood}%`;
+
+  if (phoneBadge) {
+    const unreadCount = (gameState.directMessages || []).filter((m) => !m.read).length;
+    if (unreadCount > 0) {
+      phoneBadge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+      phoneBadge.style.display = 'flex';
+    } else {
+      phoneBadge.style.display = 'none';
+    }
+  }
 }
 
 export function showToast(message) {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
-  const toast = document.createElement('div');
-  toast.className = 'toast';
+  let toast = container.querySelector('.toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'toast';
+    container.appendChild(toast);
+  }
   toast.textContent = message;
-  container.appendChild(toast);
+  toast.style.animation = 'none';
+  toast.offsetHeight;
+  toast.style.animation = '';
 
-  setTimeout(() => {
+  if (activeToastTimer) clearTimeout(activeToastTimer);
+  activeToastTimer = setTimeout(() => {
     toast.remove();
+    activeToastTimer = null;
   }, 2600);
 }
 

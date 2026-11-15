@@ -176,3 +176,23 @@
   text-align: center;
   color: var(--text-main);
 }
+
+/* Превью поста из InstaFlower у клиента в зале */
+.client-post-ref {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #FFF8F5;
+  border: 1.5px dashed var(--primary);
+  border-radius: 11px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+}
+
+.client-post-ref img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}

@@ -311,6 +311,7 @@ html, body {
 }
 
 .nav-btn {
+  position: relative;
   border: none;
   background: transparent;
   display: flex;
@@ -325,6 +326,24 @@ html, body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.18s ease;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 18px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(200, 120, 106, 0.45);
 }
 
 .nav-btn svg {
@@ -365,4 +384,8 @@ html, body {
   text-align: center;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
   animation: fadeInScreen 0.2s ease-out;
+}
+/* Маскировка пароля/ключа без триггера менеджера паролей Google */
+.masked-input {
+  -webkit-text-security: disc;
 }
