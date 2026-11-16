@@ -87,6 +87,44 @@ const SEASONAL_PREFERENCES = {
   autumn: 'хочет уютный осенний букет из подсолнухов, белых хризантем, коралловых пионов и эвкалипта'
 };
 
+export function resolvePlayerGender(name, savedGender = 'auto') {
+  if (savedGender === 'female' || savedGender === 'male') return savedGender;
+  const clean = String(name || '').trim().toLowerCase();
+  if (!clean) return 'female';
+
+  const firstWord = clean.split(/[\s-]+/)[0];
+  const knownMale = new Set([
+    'никита', 'илья', 'фома', 'кузьма', 'лука', 'савва', 'данила', 'гаврила',
+    'миша', 'дима', 'паша', 'серёжа', 'сережа', 'вова', 'коля', 'петя', 'ваня',
+    'лёша', 'леша', 'гоша', 'юра', 'толя', 'костя', 'гена', 'витя', 'рома', 'ромка',
+    'тима', 'стёпа', 'степа', 'слава', 'влад', 'шамиль', 'руслан', 'марат', 'дамир',
+    'тимур', 'айдар', 'камиль', 'рамиль', 'эмиль', 'наиль', 'артур', 'андрей',
+    'сергей', 'алексей', 'максим', 'денис', 'игорь', 'олег', 'роман', 'иван',
+    'павел', 'кирилл', 'егор', 'антон', 'владимир', 'александр', 'дмитрий', 'михаил',
+    'артём', 'артем', 'данил', 'даниил', 'матвей', 'марк', 'лев'
+  ]);
+  const knownFemale = new Set([
+    'алия', 'алиюш', 'алиюша', 'алиюшка', 'аличка', 'альбина', 'гузель', 'алсу',
+    'айгуль', 'ляйсан', 'адель', 'нинель', 'любовь', 'камилла', 'зарина', 'карина',
+    'динара', 'индира'
+  ]);
+
+  if (knownFemale.has(firstWord)) return 'female';
+  if (knownMale.has(firstWord)) return 'male';
+
+  if (/(?:уш|юш|уша|юша|ечка|очка|енька|онька|ушка|юшка|а|я)$/i.test(firstWord)) {
+    return 'female';
+  }
+  return 'male';
+}
+
+function getBadgeRuleText(badgeName, playerGender) {
+  if (playerGender === 'female') {
+    return `Пол продавца «${badgeName}»: ЖЕНСКИЙ (девушка/женщина). Говори о ней и обращайся СТРОГО В ЖЕНСКОМ РОДЕ (например: «подсказала», «собрала», «такая внимательная», «молодец», «настоящая волшебница»). КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО обращаться к ней в мужском роде («ты такой молодец», «помог», «сделал»).`;
+  }
+  return `Пол продавца «${badgeName}»: МУЖСКОЙ (парень/мужчина). Говори о нём и обращайся СТРОГО В МУЖСКОМ РОДЕ (например: «подсказал», «собрал», «такой внимательный», «молодец», «настоящий мастер»). КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО обращаться в женском роде.`;
+}
+
 function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -214,6 +252,7 @@ export function generateRandomClient() {
 
   const hairOptions = gender === 'female' ? ['long', 'bob', 'bun'] : ['short', 'quiff', 'buzz'];
   const hairColor = age >= 52 ? pickRandom(CLIENT_TEMPLATES.seniorHairColors) : pickRandom(CLIENT_TEMPLATES.youngHairColors);
+  const badgeName = String(gameState.playerBadgeName || '').trim();
 
   return {
     id: 'client_' + Date.now(),
@@ -227,6 +266,7 @@ export function generateRandomClient() {
     preference,
     mood: inspiredByPost || isViralClient ? 75 : 65,
     status: 'talking',
+    noticedBadge: Boolean(badgeName) && Math.random() < 0.42,
     inspiredByPost,
     isViralClient,
     appearance: {
@@ -267,6 +307,7 @@ export function generatePreorderClient(preorder) {
   const hairOptions = gender === 'female' ? ['long', 'bob', 'bun'] : ['short', 'quiff', 'buzz'];
   const flowerMeta = FLOWERS_CATALOG[preorder.typeId];
   const flowerName = preorder.flowerName || flowerMeta?.name || 'цветы';
+  const badgeName = String(gameState.playerBadgeName || '').trim();
 
   return {
     id: 'client_pre_' + Date.now(),
@@ -280,6 +321,7 @@ export function generatePreorderClient(preorder) {
     preference: `заказывал(а) ${preorder.qty} шт. «${flowerName}» к ${preorder.dueTimeLabel}`,
     mood: 80,
     status: 'talking',
+    noticedBadge: Boolean(badgeName) && Math.random() < 0.45,
     preorder: { ...preorder, flowerName },
     appearance: {
       gender,
@@ -340,6 +382,19 @@ export function buildClientSystemPrompt(client) {
 - Ты увидел(а) этот букет в соцсети InstaFlower и хочешь точно такой же (или максимально близкий по основным цветам).`
     : '';
 
+  const badgeName = String(gameState.playerBadgeName || '').trim();
+  let badgeSection = '';
+  if (badgeName && client.noticedBadge) {
+    const playerGender = resolvePlayerGender(badgeName, gameState.playerGender);
+    const ruleText = getBadgeRuleText(badgeName, playerGender);
+    const alreadyCalledByName = (client.chatLog || []).some(
+      (m) => m.sender === 'client' && m.text.toLowerCase().includes(badgeName.toLowerCase())
+    );
+    badgeSection = alreadyCalledByName
+      ? `\n- ИМЯ И ПОЛ ФЛОРИСТА: ${ruleText} Ты уже называл(а) имя раньше, повторять его каждый раз не нужно.`
+      : `\n- БЕЙДЖИК ФЛОРИСТА: На груди у продавца бейджик с именем «${badgeName}». ${ruleText} Обратись к продавцу по имени «${badgeName}» 1 раз естественно (в приветствии, уточнении или благодарности), не части с именем.`;
+  }
+
   return `Ты отыгрываешь роль покупателя в цветочном магазине "${gameState.shopName || 'Fleur Atelier'}".
 ТВОИ ПАРАМЕТРЫ:
 - Имя и возраст: ${client.name}, ${client.age} лет.
@@ -348,7 +403,7 @@ export function buildClientSystemPrompt(client) {
 - Повод покупки: ${client.occasion}.
 - Максимальный бюджет: ${client.budget} ₽ (можешь торговаться, но не покупай то, что дороже бюджета больше чем на 10%).
 - Пожелание/вкус: ${client.preference}.
-- Текущее настроение: ${client.mood} из 100.${preorderSection}${postSection}
+- Текущее настроение: ${client.mood} из 100.${badgeSection}${preorderSection}${postSection}
 
 АССОРТИМЕНТ МАГАЗИНА:
 ${vasesText}
@@ -741,6 +796,15 @@ function runOfflineClientAI(messages) {
   const preorder = parsePreorderFromSys(sys);
   const postRef = parsePostRefFromSys(sys);
 
+  const badgeName = String(gameState.playerBadgeName || '').trim();
+  const playerGender = resolvePlayerGender(badgeName, gameState.playerGender);
+  const clientNoticedBadge = sys.includes('БЕЙДЖИК ФЛОРИСТА:') || sys.includes('ИМЯ И ПОЛ ФЛОРИСТА:');
+  const alreadyUsedBadge = badgeName
+    ? prevReplies.some((r) => r.toLowerCase().includes(badgeName.toLowerCase()))
+    : true;
+  const canUseBadge = Boolean(badgeName && clientNoticedBadge && !alreadyUsedBadge);
+  const masterPraise = playerGender === 'female' ? 'вы настоящая волшебница' : 'вы настоящий мастер';
+
   const isGrumpy = sys.includes('ворчлив') || sys.includes('требовательн');
   const isHurry = sys.includes('спешащ');
   const isRomantic = sys.includes('романт') || sys.includes('уют');
@@ -763,9 +827,12 @@ function runOfflineClientAI(messages) {
   const saw = isFemale ? 'увидела' : 'увидел';
 
   if (lower.includes('ты только что вошёл')) {
+    const greetWithName = canUseBadge && Math.random() < 0.55;
+    const hiName = greetWithName ? `, ${badgeName}!` : '!';
+
     if (preorder) {
       return JSON.stringify({
-        reply: `Здравствуйте! Это я ${wrote} вам в Direct насчёт предзаказа на ${preorder.dueTimeLabel} — ${preorder.qty} шт. «${preorder.flowerName}». Уже готово?`,
+        reply: `Здравствуйте${hiName} Это я ${wrote} вам в Direct насчёт предзаказа на ${preorder.dueTimeLabel} — ${preorder.qty} шт. «${preorder.flowerName}». Уже готово?`,
         moodChange: 0,
         dealStatus: 'talking'
       });
@@ -773,7 +840,7 @@ function runOfflineClientAI(messages) {
 
     if (postRef) {
       return JSON.stringify({
-        reply: `Здравствуйте! Я ${saw} ваш пост в InstaFlower и прямо влюбил${isFemale ? 'ась' : 'ся'}! Хочу точно такой же букет (${postRef.desc})!`,
+        reply: `Здравствуйте${hiName} Я ${saw} ваш пост в InstaFlower и прямо влюбил${isFemale ? 'ась' : 'ся'}! Хочу точно такой же букет (${postRef.desc})!`,
         moodChange: 4,
         dealStatus: 'talking'
       });
@@ -781,19 +848,19 @@ function runOfflineClientAI(messages) {
 
     const greetings = isGrumpy
       ? [
-          `Добрый день. Надеюсь, у вас тут есть действительно свежие цветы — повод серьёзный: ${occasion}.`,
-          `Здравствуйте. Не люблю долгих вступлений: мне нужен достойный букет, повод — ${occasion}.`,
+          `Добрый день${greetWithName ? `, ${badgeName}` : ''}. Надеюсь, у вас тут есть действительно свежие цветы — повод серьёзный: ${occasion}.`,
+          `Здравствуйте${hiName} Не люблю долгих вступлений: мне нужен достойный букет, повод — ${occasion}.`,
           `Приветствую. ${isFemale ? 'Заглянула' : 'Заглянул'} оценить ваш ассортимент — ищу хороший вариант на повод «${occasion}».`
         ]
       : isHurry
       ? [
-          `Здравствуйте! Очень тороплюсь, помогите быстро подобрать цветы — у меня ${occasion}!`,
-          `Добрый день! Буквально на пару минут ${came}: нужен красивый вариант, повод — ${occasion}.`
+          `Здравствуйте${hiName} Очень тороплюсь, помогите быстро подобрать цветы — у меня ${occasion}!`,
+          `Добрый день${greetWithName ? `, ${badgeName}` : ''}! Буквально на пару минут ${came}: нужен красивый вариант, повод — ${occasion}.`
         ]
       : [
-          `Здравствуйте! Какой у вас здесь чудесный аромат! Подбираю цветы, повод: ${occasion}.`,
-          `Добрый день! ${came.charAt(0).toUpperCase() + came.slice(1)} за красивым букетом — у меня ${occasion}. Что посоветуете?`,
-          `Привет! Так уютно в вашей лавке. Поможете выбрать что-нибудь душевное на повод «${occasion}»?`
+          `Здравствуйте${hiName} Какой у вас здесь чудесный аромат! Подбираю цветы, повод: ${occasion}.`,
+          `Добрый день${greetWithName ? `, ${badgeName}` : ''}! ${came.charAt(0).toUpperCase() + came.slice(1)} за красивым букетом — у меня ${occasion}. Что посоветуете?`,
+          `Привет${greetWithName ? `, ${badgeName}` : ''}! Так уютно в вашей лавке. Поможете выбрать что-нибудь душевное на повод «${occasion}»?`
         ];
     return JSON.stringify({ reply: pickUnused(greetings, prevReplies), moodChange: 0, dealStatus: 'talking' });
   }
@@ -920,8 +987,9 @@ function runOfflineClientAI(messages) {
         });
       }
 
+      const nameThanks = canUseBadge && Math.random() < 0.75 ? `, ${badgeName}` : '';
       return JSON.stringify({
-        reply: `Вот это сервис! Всё готово ровно к ${preorder.dueTimeLabel} и выглядит восхитительно! Забираю за ${offeredPrice} ₽ и оставляю вам чаевые за заботу ❤️`,
+        reply: `Вот это сервис${nameThanks}! Всё готово ровно к ${preorder.dueTimeLabel} и выглядит восхитительно! Забираю за ${offeredPrice} ₽ и оставляю вам чаевые за заботу ❤️`,
         moodChange: 18,
         dealStatus: 'bought'
       });
@@ -1005,20 +1073,21 @@ function runOfflineClientAI(messages) {
       return JSON.stringify({ reply: pickUnused(priceyReplies, prevReplies), moodChange: -5, dealStatus: 'talking' });
     }
 
+    const endName = canUseBadge && Math.random() < 0.72 ? `, ${badgeName}` : '';
     const happyBought = postRef
       ? [
-          `Вау, прямо один в один как на фото из InstaFlower! Забираю за ${offeredPrice} ₽, вы настоящие волшебники 💐`,
-          `Идеально, даже лучше, чем в посте! С радостью оплачиваю ${offeredPrice} ₽, спасибо!`
+          `Вау, прямо один в один как на фото из InstaFlower! Забираю за ${offeredPrice} ₽, ${masterPraise}${endName} 💐`,
+          `Идеально, даже лучше, чем в посте! С радостью оплачиваю ${offeredPrice} ₽, спасибо${endName}!`
         ]
       : isGrumpy
       ? [
-          `Хм, за ${offeredPrice} ₽ вполне достойная работа. Забираю, благодарю за внимание!`,
+          `Хм, за ${offeredPrice} ₽ вполне достойная работа. Забираю, благодарю за внимание${endName}!`,
           `Ладно, выглядит крепко и со вкусом, и цена ${offeredPrice} ₽ разумная. Оформляйте, я ${glad} покупке.`
         ]
       : [
-          `Ой, какая красота! И по цене ${offeredPrice} ₽ мне отлично подходит. С огромным удовольствием забираю, спасибо вам!`,
-          `Просто прелесть, прямо в точку! Забираю за ${offeredPrice} ₽, спасибо за помощь и тёплый приём!`,
-          `Идеально! Очень ${glad}, что ${came} именно к вам. Оплачиваю ${offeredPrice} ₽ и бегу!`
+          `Ой, какая красота! И по цене ${offeredPrice} ₽ мне отлично подходит. С огромным удовольствием забираю, спасибо вам${endName}!`,
+          `Просто прелесть, прямо в точку! Забираю за ${offeredPrice} ₽, ${masterPraise}${endName}!`,
+          `Идеально! Очень ${glad}, что ${came} именно к вам. Оплачиваю ${offeredPrice} ₽ и бегу, спасибо${endName}!`
         ];
 
     return JSON.stringify({ reply: pickUnused(happyBought, prevReplies), moodChange: 15, dealStatus: 'bought' });
@@ -1059,7 +1128,7 @@ function runOfflineClientAI(messages) {
           `Дела кипят! Надеюсь, у вас получится быстро собрать мне что-нибудь эффектное.`
         ]
       : [
-          `Спасибо, всё замечательно! А у вас в лавке так пахнет цветами, что настроение сразу вверх идёт!`,
+          `Спасибо${canUseBadge && Math.random() < 0.4 ? `, ${badgeName}` : ''}, всё замечательно! А у вас в лавке так пахнет цветами, что настроение сразу вверх идёт!`,
           `Чудесно, особенно когда выбираешь красивые цветы. Кстати, мой повод — ${occasion}!`
         ];
     return JSON.stringify({ reply: pickUnused(moodReplies, prevReplies), moodChange: 4, dealStatus: 'talking' });
@@ -1290,10 +1359,11 @@ function runOfflineClientAI(messages) {
   }
 
   if (lower.includes('красив') || lower.includes('лучш') || lower.includes('постара') || lower.includes('спасиб')) {
+    const politeName = canUseBadge && Math.random() < 0.5 ? `, ${badgeName}` : '';
     return JSON.stringify({
       reply: pickUnused([
-        'Ой, спасибо за заботу! Верю в ваш вкус — нажимайте «Предложить букет», когда всё будет готово.',
-        'Приятно иметь дело с профи! С нетерпением жду, что вы мне покажете.'
+        `Ой, спасибо за заботу${politeName}! Верю в ваш вкус — нажимайте «Предложить букет», когда всё будет готово.`,
+        `Приятно иметь дело с профи${politeName}! С нетерпением жду, что вы мне покажете.`
       ], prevReplies),
       moodChange: 5,
       dealStatus: 'talking'
@@ -1513,17 +1583,185 @@ function computePreorderDueSlot() {
   const openMin = (gameState.openHour || 9) * 60;
   const closeMin = (gameState.closeHour || 21) * 60;
   const curMin = Math.max(openMin, gameState.timeMinutes || openMin);
-  const latestMin = closeMin - 20;
+  const latestMin = closeMin - 15;
 
-  if (latestMin - curMin < 55) return null;
+  if (latestMin - curMin < 35) return null;
 
-  const rawOffset = 60 + Math.floor(Math.random() * 95);
+  const rawOffset = 50 + Math.floor(Math.random() * 85);
   const clamped = Math.min(latestMin, curMin + rawOffset);
   const rounded = Math.round(clamped / 15) * 15;
-  const finalMin = Math.max(curMin + 35, Math.min(latestMin, rounded));
+  const finalMin = Math.max(curMin + 25, Math.min(latestMin, rounded));
   return {
     dueMinutes: finalMin,
     dueTimeLabel: formatMinutesAsTime(finalMin)
+  };
+}
+
+function parseTimeMinutesFromText(text) {
+  const str = String(text || '');
+  const hmMatch = str.match(/\b([01]?\d|2[0-3])\s*[:.-]\s*([0-5]\d)\b/);
+  if (hmMatch) {
+    return Number(hmMatch[1]) * 60 + Number(hmMatch[2]);
+  }
+  const hourMatch = str.match(/(?:\b(?:к|в|до|на)\s+)([01]?\d|2[0-3])\b(?:\s*(?:час|ч\b|утра|дня|вечера))?/i);
+  if (hourMatch) {
+    const h = Number(hourMatch[1]);
+    if (h >= 7 && h <= 23) return h * 60;
+  }
+  return null;
+}
+
+function parseQtyFromText(text) {
+  const str = String(text || '');
+  const m =
+    str.match(/(\d{1,2})\s*(?:шт|штук|цветов|цветк|стебл|роз|пион|тюльпан|хризантем|гвоздик|лили|ирис|подсолнух|ромаш)/i) ||
+    str.match(/из\s+(\d{1,2})\b/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 1 && n <= 35 ? n : null;
+}
+
+function parsePriceFromText(text) {
+  const str = String(text || '');
+  const m = str.match(/(\d{3,5})\s*(?:₽|руб|р\b)/i);
+  if (!m) return null;
+  const p = Number(m[1]);
+  return p >= 100 && p <= 50000 ? p : null;
+}
+
+function isCancelIntent(text) {
+  const lower = String(text || '').toLowerCase();
+  const hasStrongCancel =
+    lower.includes('отмен') ||
+    lower.includes('не смогу') ||
+    lower.includes('не можем') ||
+    lower.includes('не получится') ||
+    lower.includes('не выйдет') ||
+    lower.includes('не успею') ||
+    lower.includes('не успеем') ||
+    lower.includes('отказ') ||
+    lower.includes('не приходите') ||
+    lower.includes('закрываемся') ||
+    lower.includes('закрыты') ||
+    lower.includes('не принимаю') ||
+    lower.includes('не возьму');
+
+  if (hasStrongCancel) return true;
+
+  const hasSoftNo =
+    lower.includes('нет в наличии') ||
+    lower.includes('закончил') ||
+    lower.includes('кончилис') ||
+    lower.includes('нету ') ||
+    /^(?:нет|неа|увы|простите,?\s*нет|извините,?\s*нет)[!.,\s]*$/i.test(lower.trim());
+
+  const offersAlternative =
+    lower.includes('могу замен') ||
+    lower.includes('можем замен') ||
+    lower.includes('но есть') ||
+    lower.includes('зато есть') ||
+    lower.includes('предлож') ||
+    lower.includes('давайте друг');
+
+  return hasSoftNo && !offersAlternative;
+}
+
+function isAgreeIntent(text) {
+  const lower = String(text || '').toLowerCase().trim();
+  if (!lower || isCancelIntent(lower)) return false;
+
+  const agreeWords = [
+    'приход', 'заход', 'приезж', 'забирай', 'буду ждать', 'ждём', 'ждем',
+    'договорил', 'собер', 'сдела', 'подготов', 'брон', 'оформ', 'запис',
+    'ок', 'окей', 'конечно', 'хорошо', 'ладно', 'без проблем', 'отлично',
+    'супер', 'до встречи', 'принят', 'соглас', 'успеем', 'успею', 'смогу', 'можем'
+  ];
+  if (agreeWords.some((w) => lower.includes(w))) return true;
+  if (/^(?:да|ага|угу|можно|будет)[!.,\s]*$/i.test(lower)) return true;
+  return false;
+}
+
+function hasClientConfirmWords(reply) {
+  const lower = String(reply || '').toLowerCase();
+  const asksPermission =
+    lower.includes('примете?') ||
+    lower.includes('сможете?') ||
+    lower.includes('можно?') ||
+    lower.includes('устроит?') ||
+    lower.includes('подойдёт?') ||
+    lower.includes('подойдет?') ||
+    lower.includes('возьмёте?') ||
+    lower.includes('возьмете?');
+  if (asksPermission) return false;
+
+  return /(?:приду|зайду|забегу|буду ровно|буду к|заберу|подъеду|подойду|договорились|до встречи|увидимся|заказываю тогда|оформляю|бронирую|буду ждать)/i.test(lower);
+}
+
+function hasClientCancelWords(reply) {
+  const lower = String(reply || '').toLowerCase();
+  return /(?:не приду|не зайду|отмен|в другой раз|другой день|спасибо,? что предупредили|ничего страшного|тогда поищу|не буду задерживать)/i.test(lower);
+}
+
+function resolveDueSlotFromContext(preferredLabel, existingOrder) {
+  const openMin = (gameState.openHour || 9) * 60;
+  const closeMin = (gameState.closeHour || 21) * 60;
+  const curMin = Math.max(openMin, gameState.timeMinutes || openMin);
+
+  if (curMin >= closeMin - 12) return null;
+
+  const parsedMin = parseTimeMinutesFromText(preferredLabel);
+  if (parsedMin !== null && parsedMin < closeMin - 5) {
+    const finalMin = Math.max(curMin + 12, parsedMin);
+    if (finalMin <= closeMin - 5) {
+      return {
+        dueMinutes: finalMin,
+        dueTimeLabel: formatMinutesAsTime(finalMin)
+      };
+    }
+  }
+
+  if (existingOrder && existingOrder.dueMinutes && existingOrder.dueMinutes >= curMin + 5 && existingOrder.dueMinutes < closeMin - 5) {
+    return {
+      dueMinutes: existingOrder.dueMinutes,
+      dueTimeLabel: formatMinutesAsTime(existingOrder.dueMinutes)
+    };
+  }
+
+  const slot = computePreorderDueSlot();
+  if (slot) return slot;
+
+  const fallbackMin = Math.min(closeMin - 5, curMin + 15);
+  return {
+    dueMinutes: fallbackMin,
+    dueTimeLabel: formatMinutesAsTime(fallbackMin)
+  };
+}
+
+function buildDirectOrderData({ parsedOrder, playerText, replyText, existingOrder }) {
+  const combinedText = `${playerText || ''} ${replyText || ''}`;
+  const mentioned = detectMentionedFlowers(combinedText);
+  const parsedTypeId = parsedOrder?.typeId && FLOWERS_CATALOG[parsedOrder.typeId] ? parsedOrder.typeId : null;
+  const typeId = parsedTypeId || mentioned[0] || existingOrder?.typeId || 'rose_red';
+  const meta = FLOWERS_CATALOG[typeId] || FLOWERS_CATALOG.rose_red;
+
+  const qtyFromText = parseQtyFromText(replyText) ?? parseQtyFromText(playerText);
+  const qty = Math.max(1, Math.min(35, Number(parsedOrder?.qty) || qtyFromText || existingOrder?.qty || 5));
+
+  const priceFromText = parsePriceFromText(replyText) ?? parsePriceFromText(playerText);
+  const defaultReward = meta.price * qty + 140;
+  const reward = Math.max(100, Number(parsedOrder?.reward) || priceFromText || existingOrder?.reward || defaultReward);
+
+  const timeCandidate = parsedOrder?.dueTime || replyText || playerText || existingOrder?.dueTimeLabel || '';
+  const dueSlot = resolveDueSlotFromContext(timeCandidate, existingOrder);
+  if (!dueSlot) return null;
+
+  return {
+    typeId: meta.id,
+    flowerName: meta.name,
+    qty,
+    reward,
+    dueMinutes: dueSlot.dueMinutes,
+    dueTimeLabel: dueSlot.dueTimeLabel
   };
 }
 
@@ -1534,10 +1772,12 @@ export async function generateDirectMessage() {
   const qty = 3 + Math.floor(Math.random() * 5);
   const reward = randomFlower.price * qty + 140;
   const dueSlot = computePreorderDueSlot();
+  const badgeName = String(gameState.playerBadgeName || '').trim();
+  const knowsMasterName = Boolean(badgeName) && Math.random() < 0.35;
 
   if (aiSettings.provider === 'offline') {
     await sleep(220);
-    return createFallbackDirectMessage(randomFlowerId, randomFlower.name, qty, reward, dueSlot);
+    return createFallbackDirectMessage(randomFlowerId, randomFlower.name, qty, reward, dueSlot, knowsMasterName);
   }
 
   const usedNicks = (gameState.directMessages || [])
@@ -1550,7 +1790,7 @@ export async function generateDirectMessage() {
 
   const prompt = `Сгенерируй одно входящее сообщение в Direct для цветочного магазина "${gameState.shopName || 'Fleur Atelier'}" (только самовывоз, курьерской доставки нет; подписчиков: ${gameState.followers}, время: ${formatMinutesAsTime(gameState.timeMinutes || 540)}, seed=${randomSeedHint}).
 Выбери ОДИН случайный тип:
-${canPreorder ? `- "preorder": клиент просит предзаказ на ${qty} шт. "${randomFlower.name}", заберёт сам ровно к ${dueSlot.dueTimeLabel} (бюджет ${reward} ₽). Обязательно упомяни время ${dueSlot.dueTimeLabel}!` : ''}
+${canPreorder ? `- "preorder": клиент спрашивает/просит предзаказ на ${qty} шт. "${randomFlower.name}", заберёт сам ровно к ${dueSlot.dueTimeLabel} (бюджет ${reward} ₽). Обязательно упомяни время ${dueSlot.dueTimeLabel}!` : ''}
 - "question": вопрос про самовывоз, уход за цветами, наличие сортов или график работы (не проси доставку курьером на улицу).
 - "review": тёплый отзыв или лёгкая критика про цены/упаковку.
 ВАЖНО про ник отправителя: ПРИДУМАЙ САМ каждый раз абсолютно новый, уникальный, реалистичный ник обычного человека (чередуй мужские и женские имена, разные стили с латиницей/точкой/цифрами/подчёркиванием). ЗАПРЕЩЕНО повторять эти уже занятые ники: ${usedNicks.join(', ') || 'пока нет'}, ЗАПРЕЩЕНО использовать фамилию Смирнова и слова flowers/buket/flora.
@@ -1585,7 +1825,6 @@ ${canPreorder ? `- "preorder": клиент просит предзаказ на
       ) {
         senderName = generateProceduralNick(usedSet);
       } else if (usedSet.has(lowerSender)) {
-        // Если ИИ всё же повторил ник, делаем его уникальным добавлением числа
         const suffix = 10 + Math.floor(Math.random() * 89);
         senderName = `${senderName}${suffix}`;
       }
@@ -1597,6 +1836,7 @@ ${canPreorder ? `- "preorder": клиент просит предзаказ на
         kind,
         text: msgText,
         read: false,
+        knowsMasterName,
         blockedByPlayer: false,
         blockedByClient: false,
         day: gameState.day,
@@ -1622,16 +1862,16 @@ ${canPreorder ? `- "preorder": клиент просит предзаказ на
   } catch (err) {
     console.warn('Fallback Direct:', err);
   }
-  return createFallbackDirectMessage(randomFlowerId, randomFlower.name, qty, reward, dueSlot);
+  return createFallbackDirectMessage(randomFlowerId, randomFlower.name, qty, reward, dueSlot, knowsMasterName);
 }
 
-function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot) {
+function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot, knowsMasterName = false) {
   const roll = Math.random();
   const usedSet = new Set((gameState.directMessages || []).map((m) => String(m.senderName || '').toLowerCase()));
   const sender = generateProceduralNick(usedSet);
   const nowLabel = formatMinutesAsTime(gameState.timeMinutes || 540);
 
-  if (dueSlot && roll < 0.48) {
+  if (dueSlot && roll < 0.45) {
     const texts = [
       `Здравствуйте! Можно оформить предзаказ на ${qty} шт. «${flowerName}» с получением к ${dueSlot.dueTimeLabel}? Бюджет ${reward} ₽!`,
       `Добрый день! Очень нужен букетик из ${qty} шт. (${flowerName}), смогу забрать ровно в ${dueSlot.dueTimeLabel}. Сделаете за ${reward} ₽?`
@@ -1643,6 +1883,7 @@ function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot) {
       kind: 'preorder',
       text: msgText,
       read: false,
+      knowsMasterName,
       blockedByPlayer: false,
       blockedByClient: false,
       day: gameState.day,
@@ -1676,6 +1917,7 @@ function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot) {
       kind: 'question',
       text: msgText,
       read: false,
+      knowsMasterName,
       blockedByPlayer: false,
       blockedByClient: false,
       day: gameState.day,
@@ -1697,6 +1939,7 @@ function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot) {
     kind: 'review',
     text: msgText,
     read: false,
+    knowsMasterName,
     blockedByPlayer: false,
     blockedByClient: false,
     day: gameState.day,
@@ -1707,52 +1950,84 @@ function createFallbackDirectMessage(typeId, flowerName, qty, reward, dueSlot) {
   };
 }
 
-export async function generateDirectFollowUp(dm, playerText, action = 'reply') {
+export async function generateDirectFollowUp(dm, playerText) {
   if (isRudeText(playerText)) {
     return {
       reply: 'Ну знаете, так с клиентами не разговаривают! Всего доброго, отправляю ваш профиль в чёрный список.',
       moodDelta: -5,
       followerDelta: -1,
-      persuadeAttempt: false,
       blockedByClient: true,
-      newOrder: null
+      dealDecision: dm.order ? 'cancelled' : 'none',
+      orderData: null
     };
+  }
+
+  const badgeName = String(gameState.playerBadgeName || '').trim();
+  if (typeof dm.knowsMasterName !== 'boolean') {
+    dm.knowsMasterName = Boolean(badgeName) && Math.random() < 0.35;
   }
 
   if (aiSettings.provider === 'offline') {
     await sleep(220);
-    return runOfflineDirectFollowUp(dm, playerText, action);
+    return runOfflineDirectFollowUp(dm, playerText);
   }
 
   const threadText = (dm.thread || [])
-    .map((m) => `${m.sender === 'player' ? 'Флорист' : dm.senderName}: ${m.text}`)
+    .map((m) => `${m.sender === 'player' ? 'Флорист' : m.sender === 'system' ? 'Система' : dm.senderName}: ${m.text}`)
     .join('\n');
 
-  const dueSlot = !dm.order ? computePreorderDueSlot() : null;
-  const orderInfo = dm.order
-    ? `Предзаказ: ${dm.order.qty} шт. «${dm.order.flowerName}» к ${dm.order.dueTimeLabel} за ${dm.order.reward} ₽. Попыток отказа уже было: ${dm.rejectAttempts || 0}.`
-    : 'Предзаказа пока нет (идёт обычный разговор на вопрос/отзыв).';
+  const nowTime = formatMinutesAsTime(gameState.timeMinutes || 540);
+  const closeTime = formatMinutesAsTime((gameState.closeHour || 21) * 60);
+  const dueSlot = computePreorderDueSlot();
+
+  let orderStatusStr = 'Заказа пока нет (идёт свободный разговор: вопрос/отзыв).';
+  if (dm.order) {
+    if (dm.order.accepted) {
+      orderStatusStr = `Заказ УЖЕ СОГЛАСОВАН на словах: ${dm.order.qty} шт. «${dm.order.flowerName}» к ${dm.order.dueTimeLabel} за ${dm.order.reward} ₽.`;
+    } else if (dm.order.rejected) {
+      orderStatusStr = `Ранее заказ был отменён (${dm.order.qty} шт. «${dm.order.flowerName}» к ${dm.order.dueTimeLabel}), но если флорист сейчас предложит решение — можно договориться заново.`;
+    } else {
+      orderStatusStr = `Обсуждается предзаказ (ещё НЕ подтверждён): ${dm.order.qty} шт. «${dm.order.flowerName}» к ${dm.order.dueTimeLabel} за ${dm.order.reward} ₽.`;
+    }
+  }
 
   const flowerListHint = Object.values(FLOWERS_CATALOG)
     .map((f) => `${f.id}:${f.name}`)
     .join(', ');
 
-  const prompt = `Ты — пользователь ${dm.senderName}, переписываешься в Direct с цветочным магазином "${gameState.shopName || 'Fleur Atelier'}".
-Контекст: ${orderInfo}
+  let badgeHint = '';
+  if (badgeName && dm.knowsMasterName) {
+    const playerGender = resolvePlayerGender(badgeName, gameState.playerGender);
+    const alreadyNamed = (dm.thread || []).some(
+      (m) => m.sender === 'client' && m.text.toLowerCase().includes(badgeName.toLowerCase())
+    );
+    if (!alreadyNamed) {
+      badgeHint = `\nИмя флориста: «${badgeName}». ${getBadgeRuleText(badgeName, playerGender)} При желании можешь 1 раз естественно обратиться по имени.`;
+    }
+  }
+
+  const prompt = `Ты — клиент ${dm.senderName} в переписке Direct с цветочным магазином "${gameState.shopName || 'Fleur Atelier'}".
+Сейчас в игре время: ${nowTime}, магазин работает до ${closeTime} (только самовывоз!).
+Состояние сделки: ${orderStatusStr}${badgeHint}
+
 История переписки:
 ${threadText}
-Новое сообщение флориста (${action === 'reject' ? 'ОТКАЗ от заказа с указанием причины' : 'ответ в чате'}): "${playerText}"
+Новое сообщение флориста: "${playerText}"
 
-ПРАВИЛА:
-1. Отвечай живо, коротко (1–2 предложения) на русском, прямо учитывая то, что написал флорист!
-2. Блокировка: ТОЛЬКО если флорист явно хамит, оскорбляет или издевается — поставь "blockedByClient": true и попрощайся! На вежливый ответ или честный отказ НЕ блокируй ("blockedByClient": false).
-3. ${action === 'reject'
-    ? 'Если это ОТКАЗ от предзаказа: при серьёзной причине или 2-м отказе попрощайся ("persuadeAttempt": false). При 1-м отказе из-за нехватки цветов/времени/бюджета в ~40% случаев попробуй договориться ("persuadeAttempt": true).'
-    : `Если предзаказа ещё нет${dueSlot ? ` и флорист ответил тепло/полезно, ты можешь в ~40% случаев прямо посреди разговора решить оформить предзаказ ко времени ${dueSlot.dueTimeLabel}! Тогда заполни "newOrder": {"typeId": "один из id", "qty": 3..7}` : ''}.`}
-Доступные цветы: ${flowerListHint}.
+КАК ВЕСТИ ДИАЛОГ И АНАЛИЗИРОВАТЬ СДЕЛКУ (КНОПОК «ПРИНЯТЬ/ОТКАЗАТЬ» В ИГРЕ НЕТ, ВСЁ РЕШАЕТСЯ СЛОВАМИ):
+1. Отвечай живо и естественно (1–2 предложения на русском), строго реагируя на слова флориста.
+2. Поле "dealStatus" должно ТОЧНО отражать итог переписки после твоего ответа:
+   - "agreed": ставь ВСЕГДА, если вы ДОГОВОРИЛИСЬ (флорист подтвердил/согласился на заказ, пригласил прийти за букетом, или вы прямо сейчас договорились о новом заказе, замене цветов, новом времени) — и в своей реплике ты подтверждаешь, что придёшь в магазин!
+   - "proposed": если заказа ещё не было, но ты в этом сообщении сам предлагаешь бронь/предзаказ (например к ${dueSlot ? dueSlot.dueTimeLabel : 'вечеру'}) и ждёшь подтверждения флориста.
+   - "cancelled": ставь ВСЕГДА, если флорист сказал, что НЕ сможет выполнить заказ / нет цветов / не успеет / отменяет бронь (даже если раньше уже договорились!). Тогда ты с пониманием пишешь, что не придёшь (не блокируй за вежливый отказ!).
+   - "none": обычный разговор (вопрос, благодарность, обсуждение без итоговой брони).
+3. Если ставишь "agreed" или "proposed", ОБЯЗАТЕЛЬНО заполни объект "order":
+   {"typeId": "один из id каталога", "qty": число_штук, "reward": бюджет_в_рублях, "dueTime": "HH:MM"}.
+4. "blockedByClient": true ТОЛЬКО при откровенном хамстве и оскорблениях!
+Доступные id цветов: ${flowerListHint}.
 
 ОТВЕЧАЙ СТРОГО ОДНИМ JSON БЕЗ MARKDOWN:
-{"reply": "ответ собеседника", "moodDelta": 2, "followerDelta": 0, "persuadeAttempt": false, "blockedByClient": false, "newOrder": null}`;
+{"reply": "твой ответ", "moodDelta": 2, "followerDelta": 0, "blockedByClient": false, "dealStatus": "none", "order": null}`;
 
   try {
     const raw = await callAI([{ role: 'user', content: prompt }]);
@@ -1761,125 +2036,186 @@ ${threadText}
     const e = cleaned.lastIndexOf('}');
     if (s !== -1 && e > s) {
       const parsed = JSON.parse(cleaned.slice(s, e + 1));
-      let builtOrder = null;
-      if (!dm.order && action === 'reply' && dueSlot && parsed.newOrder && FLOWERS_CATALOG[parsed.newOrder.typeId]) {
-        const fMeta = FLOWERS_CATALOG[parsed.newOrder.typeId];
-        const qty = Math.max(1, Math.min(11, Number(parsed.newOrder.qty) || 5));
-        builtOrder = {
-          typeId: fMeta.id,
-          flowerName: fMeta.name,
-          qty,
-          reward: fMeta.price * qty + 140,
-          dueMinutes: dueSlot.dueMinutes,
-          dueTimeLabel: dueSlot.dueTimeLabel
-        };
+      const reply = String(parsed.reply || 'Спасибо за ответ!').trim();
+      let dealDecision = ['none', 'proposed', 'agreed', 'cancelled'].includes(parsed.dealStatus)
+        ? parsed.dealStatus
+        : 'none';
+
+      const playerWantsCancel = isCancelIntent(playerText);
+      const clientAcceptedReply = hasClientConfirmWords(reply);
+      const clientCancelledReply = hasClientCancelWords(reply);
+
+      // Страховка: если флорист явно отказал/отменил и клиент это понял
+      if (playerWantsCancel && dealDecision !== 'agreed' && (clientCancelledReply || dm.order)) {
+        dealDecision = 'cancelled';
+      }
+
+      // Страховка: если клиент в тексте явно говорит что придёт/заберёт, а ИИ забыл поставить "agreed"
+      if (dealDecision !== 'cancelled' && dealDecision !== 'agreed' && !playerWantsCancel && clientAcceptedReply) {
+        const hasContextForOrder = Boolean(
+          dm.order ||
+          detectMentionedFlowers(`${playerText} ${reply}`).length > 0 ||
+          parseTimeMinutesFromText(`${playerText} ${reply}`) !== null ||
+          isAgreeIntent(playerText)
+        );
+        if (hasContextForOrder) {
+          dealDecision = 'agreed';
+        }
+      }
+
+      // Страховка: если уже был заказ (в обсуждении) и игрок коротко согласился, а ИИ вернул 'none'
+      if (dealDecision === 'none' && dm.order && !dm.order.accepted && !dm.order.rejected && isAgreeIntent(playerText) && !clientCancelledReply) {
+        dealDecision = 'agreed';
+      }
+
+      // Если сделка уже была согласована раньше и её НЕ отменяли, сохраняем статус 'agreed' (если не меняем)
+      let orderData = null;
+      if (dealDecision === 'agreed' || dealDecision === 'proposed') {
+        orderData = buildDirectOrderData({
+          parsedOrder: parsed.order,
+          playerText,
+          replyText: reply,
+          existingOrder: dm.order
+        });
+        if (!orderData) {
+          dealDecision = 'none';
+        }
       }
 
       return {
-        reply: String(parsed.reply || 'Спасибо за ответ!').trim(),
+        reply,
         moodDelta: Math.max(-5, Math.min(5, Number(parsed.moodDelta) || 0)),
         followerDelta: Math.max(-1, Math.min(2, Number(parsed.followerDelta) || 0)),
-        persuadeAttempt: action === 'reject' && (dm.rejectAttempts || 0) === 0 ? Boolean(parsed.persuadeAttempt) : false,
         blockedByClient: Boolean(parsed.blockedByClient),
-        newOrder: builtOrder
+        dealDecision,
+        orderData
       };
     }
   } catch (err) {
     console.warn('Fallback ответа в Direct:', err);
   }
 
-  return runOfflineDirectFollowUp(dm, playerText, action);
+  return runOfflineDirectFollowUp(dm, playerText);
 }
 
-function runOfflineDirectFollowUp(dm, playerText, action) {
-  const lower = String(playerText || '').toLowerCase();
+function runOfflineDirectFollowUp(dm, playerText) {
+  const lower = String(playerText || '').toLowerCase().trim();
+  const badgeName = String(gameState.playerBadgeName || '').trim();
+  const alreadyNamed = badgeName
+    ? (dm.thread || []).some((m) => m.sender === 'client' && m.text.toLowerCase().includes(badgeName.toLowerCase()))
+    : true;
+  const useNameInDm = Boolean(badgeName && dm.knowsMasterName && !alreadyNamed && Math.random() < 0.55);
+  const dmNameTag = useNameInDm ? `, ${badgeName}` : '';
 
-  if (action === 'reject') {
-    const attempts = dm.rejectAttempts || 0;
-    const isClosing = lower.includes('закры') || lower.includes('поздн');
-    const isNoFlowers = lower.includes('нет ') || lower.includes('наличи') || lower.includes('законч') || lower.includes('не хват');
-    const isBusy = lower.includes('успе') || lower.includes('много заказ') || lower.includes('завал') || lower.includes('времени');
-    const isBudget = lower.includes('бюджет') || lower.includes('мал') || lower.includes('дорог') || lower.includes('цен');
+  const playerCancels = isCancelIntent(playerText);
+  const playerAgrees = isAgreeIntent(playerText);
+  const mentioned = detectMentionedFlowers(playerText);
+  const mentionedTime = parseTimeMinutesFromText(playerText);
+  const mentionedQty = parseQtyFromText(playerText);
+  const mentionedPrice = parsePriceFromText(playerText);
 
-    if (attempts === 0 && !isClosing && dm.order) {
-      if (isNoFlowers && Math.random() < 0.55) {
-        return {
-          reply: `Ох, очень жаль, что «${dm.order.flowerName}» нет... А можно заменить на похожие свежие цветы, какие у вас сейчас есть? Я бы всё равно забрал(а) к ${dm.order.dueTimeLabel}!`,
-          moodDelta: 0,
-          followerDelta: 0,
-          persuadeAttempt: true,
-          blockedByClient: false,
-          newOrder: null
-        };
-      }
-      if (isBusy && Math.random() < 0.45) {
-        return {
-          reply: `Понимаю, когда много заказов! А если я подойду на часик попозже — успеете собрать? Очень хочется букет именно от вас!`,
-          moodDelta: 0,
-          followerDelta: 0,
-          persuadeAttempt: true,
-          shiftMinutes: 45,
-          blockedByClient: false,
-          newOrder: null
-        };
-      }
-      if (isBudget && Math.random() < 0.55) {
-        return {
-          reply: `Погодите, не отказывайте сразу! Если я доплачу ещё +150 ₽ (итого ${dm.order.reward + 150} ₽), возьмёте заказ в работу?`,
-          moodDelta: 0,
-          followerDelta: 0,
-          persuadeAttempt: true,
-          offerTipBoost: 150,
-          blockedByClient: false,
-          newOrder: null
-        };
-      }
-    }
-
-    if (isClosing) {
+  // 1. Продавец отказывается или отменяет заказ (в любой момент: до или после согласия!)
+  if (playerCancels) {
+    if (dm.order && dm.order.accepted) {
       return {
-        reply: 'Понял(а), раз уже к закрытию не успеваете — спасибо, что предупредили заранее! Загляну к вам завтра 🌸',
+        reply: `Понял(а), ничего страшного! Спасибо, что предупредили заранее${dmNameTag}, тогда сегодня не приду. Удачной смены 🌸`,
         moodDelta: -1,
         followerDelta: 0,
-        persuadeAttempt: false,
         blockedByClient: false,
-        newOrder: null
+        dealDecision: 'cancelled',
+        orderData: null
       };
     }
-    if (isNoFlowers) {
+    if (dm.order) {
       return {
-        reply: 'Эх, жалко, что нужных цветов нет в наличии... Буду знать, спасибо за быстрый ответ!',
+        reply: `Эх, жалко, что не получится... Ладно, спасибо за честный ответ${dmNameTag}, тогда не буду бронировать и загляну в другой день!`,
         moodDelta: -1,
         followerDelta: 0,
-        persuadeAttempt: false,
         blockedByClient: false,
-        newOrder: null
-      };
-    }
-    if (isBusy) {
-      return {
-        reply: 'Ого, у вас сегодня горячий день! Ничего страшного, успехов с заказами, напишу в другой раз 😊',
-        moodDelta: 0,
-        followerDelta: 0,
-        persuadeAttempt: false,
-        blockedByClient: false,
-        newOrder: null
+        dealDecision: 'cancelled',
+        orderData: null
       };
     }
     return {
-      reply: `Хорошо, спасибо, что честно предупредили («${playerText}»). Обращусь тогда в другой день, удачной смены!`,
-      moodDelta: -1,
+      reply: `Понял(а), спасибо, что подсказали! Тогда посмотрю, что ещё интересного у вас появится позже 🌸`,
+      moodDelta: 0,
       followerDelta: 0,
-      persuadeAttempt: false,
       blockedByClient: false,
-      newOrder: null
+      dealDecision: 'none',
+      orderData: null
     };
   }
 
-  const dueSlot = !dm.order ? computePreorderDueSlot() : null;
-  const isNegativeAnswer = lower.includes('нет') || lower.includes('не смож') || lower.includes('закры') || lower.includes('законч');
-  if (!dm.order && dueSlot && playerText.trim().length >= 5 && !isNegativeAnswer) {
-    const mentioned = detectMentionedFlowers(playerText);
+  // 2. Если у клиента уже есть обсуждаемый или ранее отменённый заказ, или продавец сам предлагает замену/время
+  if (dm.order) {
+    const updatedOrder = buildDirectOrderData({
+      parsedOrder: null,
+      playerText,
+      replyText: '',
+      existingOrder: dm.order
+    });
+
+    const hasChange = mentioned.length > 0 || mentionedTime !== null || mentionedQty !== null || mentionedPrice !== null;
+
+    if (dm.order.accepted && !hasChange) {
+      return {
+        reply: `Хорошо${dmNameTag}, всё в силе! Обязательно буду к ${dm.order.dueTimeLabel} за своим букетом 💐`,
+        moodDelta: 2,
+        followerDelta: 0,
+        blockedByClient: false,
+        dealDecision: 'agreed',
+        orderData: updatedOrder
+      };
+    }
+
+    if ((playerAgrees || hasChange) && updatedOrder) {
+      const fName = updatedOrder.flowerName;
+      return {
+        reply: `Отлично, договорились${dmNameTag}! Тогда я точно приду к ${updatedOrder.dueTimeLabel} за ${updatedOrder.qty} шт. «${fName}» (${updatedOrder.reward} ₽) 🌸`,
+        moodDelta: 3,
+        followerDelta: 1,
+        blockedByClient: false,
+        dealDecision: 'agreed',
+        orderData: updatedOrder
+      };
+    }
+
+    return {
+      reply: `Уточните, пожалуйста: всё-таки соберёте ${dm.order.qty} шт. «${dm.order.flowerName}» к ${dm.order.dueTimeLabel}, мне приходить? 😊`,
+      moodDelta: 0,
+      followerDelta: 0,
+      blockedByClient: false,
+      dealDecision: 'proposed',
+      orderData: updatedOrder
+    };
+  }
+
+  // 3. Заказа ещё не было (клиент пришёл с вопросом или отзывом)
+  const dueSlot = computePreorderDueSlot();
+  const hasExplicitOfferFromPlayer =
+    (mentioned.length > 0 && (mentionedTime !== null || mentionedQty !== null || playerAgrees)) ||
+    (mentionedTime !== null && playerAgrees);
+
+  if (hasExplicitOfferFromPlayer) {
+    const newOrder = buildDirectOrderData({
+      parsedOrder: null,
+      playerText,
+      replyText: '',
+      existingOrder: null
+    });
+    if (newOrder) {
+      return {
+        reply: `Супер, мне как раз это и нужно${dmNameTag}! Тогда всё договорились — я обязательно приду к ${newOrder.dueTimeLabel} за ${newOrder.qty} шт. «${newOrder.flowerName}» (${newOrder.reward} ₽) 💐`,
+        moodDelta: 3,
+        followerDelta: 1,
+        blockedByClient: false,
+        dealDecision: 'agreed',
+        orderData: newOrder
+      };
+    }
+  }
+
+  if (dueSlot && playerText.trim().length >= 5) {
     const invitesOrder =
       mentioned.length > 0 ||
       lower.includes('собер') ||
@@ -1889,114 +2225,74 @@ function runOfflineDirectFollowUp(dm, playerText, action) {
       lower.includes('свеж') ||
       lower.includes('ждём') ||
       lower.includes('ждем');
-    const orderChance = invitesOrder ? 0.68 : 0.42;
+    const orderChance = invitesOrder ? 0.68 : 0.4;
 
     if (Math.random() < orderChance) {
       const pool = mentioned.length ? mentioned : Object.keys(FLOWERS_CATALOG);
       const chosenId = pickRandom(pool);
       const meta = FLOWERS_CATALOG[chosenId] || FLOWERS_CATALOG.rose_red;
-      const qty = 3 + Math.floor(Math.random() * 5);
-      const reward = meta.price * qty + 140;
+      const qty = mentionedQty || (3 + Math.floor(Math.random() * 5));
+      const reward = mentionedPrice || (meta.price * qty + 140);
+      const orderData = {
+        typeId: meta.id,
+        flowerName: meta.name,
+        qty,
+        reward,
+        dueMinutes: dueSlot.dueMinutes,
+        dueTimeLabel: dueSlot.dueTimeLabel
+      };
 
       return {
-        reply: `Ой, вы так здорово и тепло отвечаете! Давайте я прямо сейчас оформлю предзаказ на ${qty} шт. «${meta.name}» к ${dueSlot.dueTimeLabel} за ${reward} ₽ — примете? 💐`,
+        reply: `Ой, вы так здорово отвечаете${dmNameTag}! А можно я тогда забронирую ${qty} шт. «${meta.name}» к ${dueSlot.dueTimeLabel} за ${reward} ₽ — смогу подойти? 💐`,
         moodDelta: 3,
         followerDelta: 1,
-        persuadeAttempt: false,
         blockedByClient: false,
-        newOrder: {
-          typeId: meta.id,
-          flowerName: meta.name,
-          qty,
-          reward,
-          dueMinutes: dueSlot.dueMinutes,
-          dueTimeLabel: dueSlot.dueTimeLabel
-        }
+        dealDecision: 'proposed',
+        orderData
       };
     }
   }
 
   if (dm.kind === 'review') {
-    if (lower.includes('спасиб') || lower.includes('рад') || lower.includes('приятн') || lower.includes('ждём') || lower.includes('ждем')) {
-      return {
-        reply: 'И вам спасибо за такую душевную атмосферу! Уже подписалась и советую вашу лавку друзьям ❤️',
-        moodDelta: 3,
-        followerDelta: 1,
-        persuadeAttempt: false,
-        blockedByClient: false,
-        newOrder: null
-      };
-    }
     return {
-      reply: 'Так приятно, когда магазин читает сообщения и отвечает лично! Обязательно загляну скоро за новым букетом ✨',
-      moodDelta: 2,
+      reply: `И вам спасибо${dmNameTag} за такую душевную атмосферу! Обязательно загляну скоро за новым букетом ❤️`,
+      moodDelta: 3,
       followerDelta: 1,
-      persuadeAttempt: false,
       blockedByClient: false,
-      newOrder: null
+      dealDecision: 'none',
+      orderData: null
     };
   }
 
   if (dm.kind === 'question') {
     if (lower.includes('вод') || lower.includes('подрез') || lower.includes('прохлад') || lower.includes('менять') || lower.includes('уход')) {
       return {
-        reply: 'Ого, спасибо за такой полезный совет по уходу! Обязательно сохраню и загляну к вам за свежими цветочками 🌸',
+        reply: `Ого, спасибо за полезный совет по уходу${dmNameTag}! Обязательно сохраню и загляну к вам за свежими цветочками 🌸`,
         moodDelta: 3,
         followerDelta: 1,
-        persuadeAttempt: false,
         blockedByClient: false,
-        newOrder: null
+        dealDecision: 'none',
+        orderData: null
       };
     }
-    if (lower.includes('до ') || lower.includes(':00') || lower.includes('работ') || lower.includes('открыт') || lower.includes('приход')) {
+    if (lower.includes('до ') || lower.includes(':00') || lower.includes('работ') || lower.includes('открыт')) {
       return {
-        reply: 'Отлично, тогда точно успеваю заскочить! До скорой встречи в вашей лавке!',
+        reply: `Отлично, спасибо за ответ${dmNameTag}! Буду знать ваш график ✨`,
         moodDelta: 2,
         followerDelta: 1,
-        persuadeAttempt: false,
         blockedByClient: false,
-        newOrder: null
+        dealDecision: 'none',
+        orderData: null
       };
     }
-    if (lower.includes('есть') || lower.includes('свеж') || lower.includes('можем') || lower.includes('пленк') || lower.includes('бумаг')) {
-      return {
-        reply: 'Супер, это как раз то, что нужно! Уже присматриваю вариант к ближайшему поводу ✨',
-        moodDelta: 2,
-        followerDelta: 1,
-        persuadeAttempt: false,
-        blockedByClient: false,
-        newOrder: null
-      };
-    }
-    if (isNegativeAnswer) {
-      return {
-        reply: 'Понял(а), спасибо, что подсказали! Тогда посмотрю, что ещё интересного у вас появится в ленте.',
-        moodDelta: 1,
-        followerDelta: 0,
-        persuadeAttempt: false,
-        blockedByClient: false,
-        newOrder: null
-      };
-    }
-  }
-
-  if (dm.order && dm.order.accepted) {
-    return {
-      reply: `Договорились! Буду ровно к ${dm.order.dueTimeLabel}, уже в предвкушении букета 💐`,
-      moodDelta: 2,
-      followerDelta: 0,
-      persuadeAttempt: false,
-      blockedByClient: false,
-      newOrder: null
-    };
   }
 
   return {
-    reply: 'Большое спасибо за быстрый и тёплый ответ! Будем на связи 🌸',
+    reply: `Большое спасибо${dmNameTag} за быстрый и тёплый ответ! Будем на связи 🌸`,
     moodDelta: 2,
     followerDelta: 1,
-    persuadeAttempt: false,
     blockedByClient: false,
-    newOrder: null
+    dealDecision: 'none',
+    orderData: null
   };
 }

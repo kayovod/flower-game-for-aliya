@@ -451,3 +451,22 @@
   border-color: var(--primary);
   background: #FFF9F7;
 }
+
+.dm-order-banner {
+  font-size: 11.5px;
+  line-height: 1.4;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  padding: 7px 9px;
+  border-radius: 10px;
+}
+
+.dm-order-banner.agreed {
+  background: var(--bg-sage-soft);
+  border-color: var(--sage);
+}
+
+.dm-order-banner.cancelled {
+  background: #FFF2F0;
+  border-color: #E4B2AA;
+}

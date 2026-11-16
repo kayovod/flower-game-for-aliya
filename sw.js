@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fleur-atelier-v6';
+const CACHE_NAME = 'fleur-atelier-v7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

@@ -28,6 +28,8 @@ export function createInitialState() {
     isSetupDone: false,
     shopName: 'Fleur Atelier',
     instaHandle: '@fleur_atelier',
+    playerBadgeName: '',
+    playerGender: 'auto',
     startDate,
     openHour: 9,
     closeHour: 21,
@@ -63,7 +65,9 @@ export function createInitialState() {
     wholesaleDay: 0,
     wholesaleDeals: [],
     energy: 100,
-    petName: 'Пискля',
+  petName: 'Пискля',
+    playerBadgeName: '',
+    playerBadgeGender: 'auto',
     petMood: 80,
     petFedToday: false,
     powerOutage: false,
@@ -121,8 +125,12 @@ export function loadState() {
     }
     if (typeof state.shownCloseHint !== 'boolean') state.shownCloseHint = false;
     if (!state.petName) state.petName = 'Пискля';
+    if (typeof state.playerBadgeName !== 'string') state.playerBadgeName = '';
+    if (!['auto', 'female', 'male'].includes(state.playerBadgeGender)) state.playerBadgeGender = 'auto';
     if (!state.shopName) state.shopName = 'Fleur Atelier';
     if (!state.instaHandle) state.instaHandle = '@fleur_atelier';
+    if (typeof state.playerBadgeName !== 'string') state.playerBadgeName = '';
+    if (!['auto', 'female', 'male'].includes(state.playerGender)) state.playerGender = 'auto';
     if (!state.startDate) state.startDate = '2026-02-08';
 
     if (typeof parsed.isSetupDone !== 'boolean') {

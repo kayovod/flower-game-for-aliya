@@ -20,7 +20,8 @@ let activeToastTimer = null;
 let currentNavTab = 'shop';
 let clockTimerId = null;
 let isAutoDmPending = false;
-let nextAutoDmRealMs = Date.now() + 26000;
+let nextAutoDmRealMs = Date.now() + 75000;
+const screenScrollMemory = { shop: 0, phone: 0, home: 0, finance: 0 };
 
 function checkPasswordAndStart() {
   let isUnlocked = false;
@@ -119,6 +120,9 @@ function initApp() {
   setupGlobalClickSounds();
   renderAll();
   startGameClock();
+  if (gameState.isSetupDone && !isShopClosedNow()) {
+    checkPreorderArrival(updateHud, showToast);
+  }
   if (!gameState.isSetupDone) {
     showWelcomeSetupModal();
   }
@@ -132,7 +136,7 @@ function startGameClock() {
 
     const onBouquetTable = currentNavTab === 'shop' && isBouquetMakerOpen();
     if (!onBouquetTable) {
-      const justClosed = addGameMinutes(5);
+      const justClosed = addGameMinutes(4);
       updateHud();
 
       if (justClosed) {
@@ -149,7 +153,7 @@ function startGameClock() {
       }
       maybeReceiveAutoDirectMessage();
     }
-  }, 8000);
+  }, 15000);
 }
 
 /** Автоматический приход сообщений и предзаказов в Direct по ходу дня */
@@ -159,19 +163,19 @@ async function maybeReceiveAutoDirectMessage() {
   if (now < nextAutoDmRealMs) return;
 
   const unreadCount = (gameState.directMessages || []).filter((m) => !m.read).length;
-  if (unreadCount >= 3) {
-    nextAutoDmRealMs = now + 35000;
+  if (unreadCount >= 2) {
+    nextAutoDmRealMs = now + 55000;
     return;
   }
 
   const followers = gameState.followers || 0;
   const hasPromoToday = gameState.activePromo && gameState.activePromo.day === gameState.day;
-  const speedReduction = Math.min(35000, followers * 400);
-  const promoMult = hasPromoToday ? 0.78 : 1;
+  const speedReduction = Math.min(40000, followers * 250);
+  const promoMult = hasPromoToday ? 0.85 : 1;
 
-  const minWait = Math.round((65000 - speedReduction) * promoMult);
-  const maxWait = Math.round((95000 - speedReduction) * promoMult);
-  nextAutoDmRealMs = now + minWait + Math.floor(Math.random() * Math.max(8000, maxWait - minWait));
+  const minWait = Math.round((130000 - speedReduction) * promoMult);
+  const maxWait = Math.round((190000 - speedReduction) * promoMult);
+  nextAutoDmRealMs = now + minWait + Math.floor(Math.random() * Math.max(15000, maxWait - minWait));
 
   isAutoDmPending = true;
   try {
@@ -234,6 +238,21 @@ function setupNavigation() {
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = btn.dataset.target;
+      const targetScreen = document.getElementById(`screen-${target}`);
+
+      if (currentNavTab === target) {
+        screenScrollMemory[target] = 0;
+        if (targetScreen) {
+          targetScreen.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        return;
+      }
+
+      const prevScreen = document.getElementById(`screen-${currentNavTab}`);
+      if (prevScreen) {
+        screenScrollMemory[currentNavTab] = prevScreen.scrollTop;
+      }
+
       currentNavTab = target;
 
       navButtons.forEach((b) => b.classList.remove('active'));
@@ -252,6 +271,13 @@ function setupNavigation() {
         renderHomeScreen(updateHud, showToast);
       } else if (target === 'finance') {
         renderFinanceSettingsScreen(updateHud, showToast);
+      }
+
+      const savedScroll = screenScrollMemory[target] || 0;
+      if (targetScreen) {
+        requestAnimationFrame(() => {
+          targetScreen.scrollTop = savedScroll;
+        });
       }
     });
   });

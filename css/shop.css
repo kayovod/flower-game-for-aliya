@@ -375,8 +375,11 @@
 
 /* Декор и форс-мажор в магазине */
 .shop-scene.has-wallpaper {
-  background-image: radial-gradient(rgba(217, 138, 124, 0.16) 2px, transparent 2px);
-  background-size: 22px 22px;
+  background-color: #F6EAE0;
+  background-image:
+    radial-gradient(circle at 12px 12px, rgba(217, 138, 124, 0.2) 3px, transparent 3.5px),
+    radial-gradient(circle at 0 0, rgba(137, 168, 139, 0.14) 2px, transparent 2.5px);
+  background-size: 24px 24px;
 }
 
 .shop-scene.power-out {
@@ -540,55 +543,65 @@
   border-color: var(--primary);
 }
 
-/* Декор торгового зала (Этап 6) */
-.shop-decor-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.shop-hearts-garland {
-  text-align: center;
-  font-size: 13px;
-  letter-spacing: 5px;
-  filter: drop-shadow(0 2px 3px rgba(217, 138, 124, 0.35));
-}
-
-.shop-ivy-arch {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 4px;
-  font-size: 14px;
-  letter-spacing: 2px;
-  opacity: 0.92;
+/* Визуальный SVG-декор торгового зала */
+.shop-arch-svg-wrap {
+  width: 100%;
+  margin-top: -4px;
   pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(74, 62, 57, 0.12));
 }
 
-.shop-decor-shelf {
+.shop-hearts-svg-wrap {
+  width: 100%;
+  margin-top: -6px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(217, 138, 124, 0.25));
+}
+
+.shop-decor-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 4px;
+  background: rgba(255, 253, 249, 0.48);
+  border: 1px solid rgba(213, 195, 179, 0.55);
+  border-radius: 14px;
+}
+
+.shop-wall-objects {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  justify-content: space-around;
   flex-wrap: wrap;
-  padding: 5px 8px;
-  background: rgba(255, 253, 249, 0.72);
-  border: 1px dashed var(--border-soft);
-  border-radius: 12px;
-  font-size: 12px;
+  gap: 8px;
 }
 
-.shop-decor-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #FFFDF9;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-main);
+.shop-floor-shelf-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.shop-floor-objects {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 6px;
+  margin-bottom: -2px;
+}
+
+.shop-shelf-plank {
+  height: 9px;
+  background: linear-gradient(180deg, #D5B89B 0%, #B48F6E 100%);
+  border-radius: 6px;
+  box-shadow: 0 3px 6px rgba(74, 62, 57, 0.16);
+}
+
+.shop-decor-svg-item {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  filter: drop-shadow(0 3px 4px rgba(74, 62, 57, 0.14));
 }

@@ -254,13 +254,6 @@ export const AI_PROVIDERS = {
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-3-5-haiku-latest'
   },
-  puter: {
-    id: 'puter',
-    name: 'Puter.js (Если есть аккаунт)',
-    needsKey: false,
-    defaultBaseUrl: '',
-    defaultModel: 'gpt-4o-mini'
-  },
   custom: {
     id: 'custom',
     name: 'Свой OpenAI-совместимый API',
@@ -357,7 +350,7 @@ export const DECOR_CATALOG = [
     name: 'Винтажное зеркало',
     place: 'Магазин',
     category: 'Обычный',
-    icon: '🪞',
+    icon: '💎',
     price: 480,
     effectText: 'Зрительно расширяет зал (+4% атмосферы)',
     moodBonus: 4
@@ -479,7 +472,7 @@ export const DECOR_CATALOG = [
     name: 'Фикус в кашпо',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '🪴',
+    icon: '🌱',
     price: 520,
     effectText: 'Живая зелень дома (+5% атмосферы)',
     moodBonus: 5
@@ -489,7 +482,7 @@ export const DECOR_CATALOG = [
     name: 'Кружевные шторы на окно',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '🪟',
+    icon: '🎐',
     price: 490,
     effectText: 'Воздушные занавески у окна (+4% атмосферы)',
     moodBonus: 4

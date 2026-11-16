@@ -60,6 +60,11 @@ export function checkPreorderArrival(onHudUpdate, showToast) {
   gameState.preorders.forEach((p) => {
     if (p.day < gameState.day && (p.status === 'waiting' || p.status === 'in_shop')) {
       p.status = 'expired';
+      const dm = (gameState.directMessages || []).find((m) => m.id === p.dmId);
+      if (dm && dm.order && !dm.order.done) {
+        dm.order.accepted = false;
+        dm.order.rejected = true;
+      }
       cleaned = true;
     }
   });
@@ -69,7 +74,9 @@ export function checkPreorderArrival(onHudUpdate, showToast) {
 
   const curMin = gameState.timeMinutes || 540;
   const duePreorder = gameState.preorders.find(
-    (p) => p.day === gameState.day && p.status === 'waiting' && curMin >= p.dueMinutes
+    (p) =>
+      p.day === gameState.day &&
+      ((p.status === 'in_shop' && !activeClient) || (p.status === 'waiting' && curMin >= p.dueMinutes))
   );
   if (!duePreorder) return false;
 
@@ -117,13 +124,19 @@ export function renderShopScreen(onHudUpdate, showToast) {
     <div id="shop-subtab-content" style="display: flex; flex-direction: column; gap: 12px;"></div>
   `;
 
-  container.querySelectorAll('[data-shop-tab]').forEach((btn) => {
+ container.querySelectorAll('[data-shop-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      shopSubTab = btn.dataset.shopTab;
-      renderShopScreen(onHudUpdate, showToast);
+      const nextSubTab = btn.dataset.shopTab;
+      if (nextSubTab !== shopSubTab) {
+        shopSubTab = nextSubTab;
+        renderShopScreen(onHudUpdate, showToast);
+        container.scrollTop = 0;
+        if (shopSubTab === 'hall' && !isShopClosedNow()) {
+          checkPreorderArrival(onHudUpdate, showToast);
+        }
+      }
     });
   });
-
   const subContent = document.getElementById('shop-subtab-content');
   if (shopSubTab === 'bouquet') {
     renderBouquetMaker(subContent, onHudUpdate, showToast, () => {
@@ -160,9 +173,7 @@ export function renderShopScreen(onHudUpdate, showToast) {
         <span class="garland-bulb"></span>
       </div>
 
-      ${isShopDecorShown('hearts_garland_shop') ? '<div class="shop-hearts-garland">💕 💖 💗 💖 💕</div>' : ''}
-      ${isShopDecorShown('shop_arch') ? '<div class="shop-ivy-arch"><span>🌿🍃🌸</span><span>🌸🍃🌿</span></div>' : ''}
-      ${hasNeon ? `<div class="shop-neon-badge">✨ ${escapeHtml(gameState.shopName || 'Fleur Atelier')} ✨</div>` : ''}
+      ${renderShopTopDecor(hasNeon)}
 
       ${gameState.powerOutage ? `
         <div class="power-alert-bar">
@@ -194,7 +205,7 @@ export function renderShopScreen(onHudUpdate, showToast) {
         </div>
       </div>
 
-      ${renderShopDecorShelf()}
+      ${renderShopDecorVisuals()}
 
       ${renderPreordersQueue()}
 
@@ -214,16 +225,184 @@ export function renderShopScreen(onHudUpdate, showToast) {
   scrollChatToBottom();
 }
 
-function renderShopDecorShelf() {
-  const badges = [];
-  if (isShopDecorShown('wreath_shop')) badges.push('<span class="shop-decor-badge">🎀 Венок</span>');
-  if (isShopDecorShown('shop_mirror')) badges.push('<span class="shop-decor-badge">🪞 Зеркало</span>');
-  if (isShopDecorShown('shop_chalkboard')) badges.push('<span class="shop-decor-badge">📋 Меню дня</span>');
-  if (isShopDecorShown('xmas_tree_shop')) badges.push('<span class="shop-decor-badge">🎄 Новогодняя ёлка</span>');
-  if (isShopDecorShown('pumpkins_shop')) badges.push('<span class="shop-decor-badge">🎃 Осенние тыквы</span>');
+function renderShopTopDecor(hasNeon) {
+  const parts = [];
+  if (isShopDecorShown('shop_arch')) {
+    parts.push(`
+      <div class="shop-arch-svg-wrap" title="Цветочная арка с плющом">
+        <svg viewBox="0 0 360 40" width="100%" height="36" preserveAspectRatio="none">
+          <path d="M4,38 Q18,8 78,8 L282,8 Q342,8 356,38" fill="none" stroke="#5A8357" stroke-width="5" stroke-linecap="round"/>
+          <path d="M12,35 Q30,13 90,12 L270,12 Q330,13 348,35" fill="none" stroke="#7AA573" stroke-width="3" stroke-linecap="round"/>
+          <g fill="#6E9E69">
+            <ellipse cx="32" cy="18" rx="9" ry="5" transform="rotate(-25 32 18)"/>
+            <ellipse cx="64" cy="10" rx="9" ry="4.5" transform="rotate(10 64 10)"/>
+            <ellipse cx="110" cy="9" rx="10" ry="4.5"/>
+            <ellipse cx="155" cy="9" rx="9" ry="4.5" transform="rotate(-10 155 9)"/>
+            <ellipse cx="205" cy="9" rx="9" ry="4.5" transform="rotate(10 205 9)"/>
+            <ellipse cx="250" cy="9" rx="10" ry="4.5"/>
+            <ellipse cx="296" cy="10" rx="9" ry="4.5" transform="rotate(-10 296 10)"/>
+            <ellipse cx="328" cy="18" rx="9" ry="5" transform="rotate(25 328 18)"/>
+          </g>
+          <g>
+            <circle cx="20" cy="28" r="5" fill="#F29AA4"/><circle cx="20" cy="28" r="2" fill="#FFE28A"/>
+            <circle cx="88" cy="10" r="4.5" fill="#F6B8BF"/><circle cx="88" cy="10" r="1.8" fill="#FFE28A"/>
+            <circle cx="180" cy="10" r="5" fill="#F29AA4"/><circle cx="180" cy="10" r="2" fill="#FFE28A"/>
+            <circle cx="272" cy="10" r="4.5" fill="#F6B8BF"/><circle cx="272" cy="10" r="1.8" fill="#FFE28A"/>
+            <circle cx="340" cy="28" r="5" fill="#F29AA4"/><circle cx="340" cy="28" r="2" fill="#FFE28A"/>
+          </g>
+        </svg>
+      </div>
+    `);
+  }
+  if (isShopDecorShown('hearts_garland_shop')) {
+    parts.push(`
+      <div class="shop-hearts-svg-wrap" title="Гирлянда из сердечек">
+        <svg viewBox="0 0 340 28" width="100%" height="26">
+          <path d="M10,5 Q90,18 170,6 Q250,18 330,5" fill="none" stroke="#C99B95" stroke-width="1.6"/>
+          ${[
+            { x: 42, y: 12, c: '#E87A88' },
+            { x: 96, y: 14, c: '#F4A6B1' },
+            { x: 148, y: 10, c: '#DF5F73' },
+            { x: 196, y: 10, c: '#F4A6B1' },
+            { x: 248, y: 14, c: '#E87A88' },
+            { x: 298, y: 12, c: '#DF5F73' }
+          ].map((h) => `
+            <g transform="translate(${h.x}, ${h.y})">
+              <path d="M0,3 C-4,-2 -9,2 -5,7 L0,12 L5,7 C9,2 4,-2 0,3 Z" fill="${h.c}" stroke="#FFFDF9" stroke-width="0.9"/>
+            </g>
+          `).join('')}
+        </svg>
+      </div>
+    `);
+  }
+  if (hasNeon) {
+    parts.push(`<div class="shop-neon-badge">✨ ${escapeHtml(gameState.shopName || 'Fleur Atelier')} ✨</div>`);
+  }
+  return parts.join('');
+}
 
-  if (!badges.length) return '';
-  return `<div class="shop-decor-shelf">${badges.join('')}</div>`;
+function renderShopDecorVisuals() {
+  const wallItems = [];
+  const floorItems = [];
+
+  if (isShopDecorShown('wreath_shop')) {
+    wallItems.push(`
+      <div class="shop-decor-svg-item" title="Праздничный венок">
+        <svg viewBox="0 0 64 64" width="52" height="52">
+          <circle cx="32" cy="33" r="20" fill="none" stroke="#4D7D4E" stroke-width="11"/>
+          <circle cx="32" cy="33" r="20" fill="none" stroke="#6E9F6C" stroke-width="7" stroke-dasharray="6 4"/>
+          <circle cx="18" cy="22" r="2.6" fill="#D9534F"/>
+          <circle cx="46" cy="24" r="2.6" fill="#D9534F"/>
+          <circle cx="21" cy="46" r="2.6" fill="#E8B84B"/>
+          <circle cx="44" cy="45" r="2.6" fill="#D9534F"/>
+          <path d="M24,14 C20,8 29,7 32,14 C35,7 44,8 40,14 L32,18 Z" fill="#D95A62"/>
+          <path d="M30,17 L24,27 M34,17 L40,27" stroke="#D95A62" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (isShopDecorShown('shop_mirror')) {
+    wallItems.push(`
+      <div class="shop-decor-svg-item" title="Винтажное зеркало">
+        <svg viewBox="0 0 56 68" width="46" height="56">
+          <ellipse cx="28" cy="34" rx="20" ry="27" fill="#C9A36B" stroke="#8F6E3E" stroke-width="2.5"/>
+          <ellipse cx="28" cy="34" rx="15" ry="22" fill="#DCECF5" stroke="#EAD4A6" stroke-width="1.5"/>
+          <path d="M20,22 L32,16 M18,32 L35,23" stroke="rgba(255,255,255,0.8)" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="28" cy="8" r="2.2" fill="#DFB66B"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (isShopDecorShown('shop_chalkboard')) {
+    wallItems.push(`
+      <div class="shop-decor-svg-item" title="Меловая доска «Букет дня»">
+        <svg viewBox="0 0 70 64" width="58" height="52">
+          <path d="M20,12 L35,3 L50,12" fill="none" stroke="#9D7D63" stroke-width="2"/>
+          <rect x="8" y="12" width="54" height="46" rx="5" fill="#A97D59" stroke="#7E5B3E" stroke-width="2"/>
+          <rect x="13" y="17" width="44" height="36" rx="2" fill="#3B4540"/>
+          <text x="35" y="28" text-anchor="middle" fill="#F5EFE6" font-size="7" font-weight="bold">БУКЕТ ДНЯ</text>
+          <path d="M35,47 L35,36 M35,42 L30,39 M35,44 L40,40" stroke="#98C496" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="35" cy="35" r="3.5" fill="#F29AA4"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (gameState.hasFridge && !(gameState.hiddenDecor || []).includes('fridge')) {
+    floorItems.push(`
+      <div class="shop-decor-svg-item" title="Холодильная витрина">
+        <svg viewBox="0 0 60 76" width="50" height="64">
+          <rect x="8" y="6" width="44" height="66" rx="6" fill="#E8F3F7" stroke="#A6C1CC" stroke-width="2.5"/>
+          <rect x="13" y="12" width="34" height="46" rx="3" fill="#D2EAF4"/>
+          <line x1="13" y1="35" x2="47" y2="35" stroke="#A6C1CC" stroke-width="2"/>
+          <circle cx="24" cy="27" r="4.5" fill="#E87A88"/><circle cx="35" cy="27" r="4.5" fill="#F2B8C0"/>
+          <circle cx="25" cy="49" r="4.5" fill="#F4C752"/><circle cx="36" cy="49" r="4.5" fill="#B59ED6"/>
+          <line x1="43" y1="26" x2="43" y2="42" stroke="#7EA6B8" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M18,18 L28,15 M18,22 L24,20" stroke="rgba(255,255,255,0.8)" stroke-width="2" stroke-linecap="round"/>
+          <rect x="12" y="61" width="36" height="6" rx="2" fill="#B8D0DA"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (isShopDecorShown('pumpkins_shop')) {
+    floorItems.push(`
+      <div class="shop-decor-svg-item" title="Осенние тыквы">
+        <svg viewBox="0 0 88 58" width="76" height="50">
+          <path d="M10,50 Q4,42 14,39 Q18,46 10,50 Z" fill="#D96E34"/>
+          <path d="M77,50 Q84,42 74,39 Q70,46 77,50 Z" fill="#E6A445"/>
+          <!-- Большая тыква -->
+          <path d="M35,18 Q36,12 40,11" fill="none" stroke="#5A7247" stroke-width="3" stroke-linecap="round"/>
+          <ellipse cx="36" cy="36" rx="19" ry="15" fill="#DF7135" stroke="#B55220" stroke-width="1.5"/>
+          <ellipse cx="36" cy="36" rx="12" ry="15" fill="#EB8243"/>
+          <ellipse cx="36" cy="36" rx="5.5" ry="15" fill="#F29457"/>
+          <!-- Вторая светло-золотая тыква -->
+          <path d="M62,25 Q63,20 66,19" fill="none" stroke="#5A7247" stroke-width="2.5" stroke-linecap="round"/>
+          <ellipse cx="62" cy="40" rx="13" ry="11" fill="#E8AE52" stroke="#C48B32" stroke-width="1.3"/>
+          <ellipse cx="62" cy="40" rx="6" ry="11" fill="#F2C06B"/>
+          <!-- Маленькая тыковка спереди -->
+          <ellipse cx="20" cy="44" rx="9" ry="7.5" fill="#ED954B" stroke="#C26B27" stroke-width="1.2"/>
+          <ellipse cx="20" cy="44" rx="4" ry="7.5" fill="#F6AC66"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (isShopDecorShown('xmas_tree_shop')) {
+    floorItems.push(`
+      <div class="shop-decor-svg-item" title="Новогодняя ёлка">
+        <svg viewBox="0 0 68 80" width="58" height="68">
+          <rect x="27" y="64" width="14" height="10" rx="2" fill="#9E6B4B"/>
+          <polygon points="34,26 11,64 57,64" fill="#3D7047"/>
+          <polygon points="34,17 15,48 53,48" fill="#4B8556"/>
+          <polygon points="34,10 20,33 48,33" fill="#5B9966"/>
+          <path d="M23,28 Q34,34 45,28 M18,44 Q34,51 50,44 M14,58 Q34,65 54,58" fill="none" stroke="#FFE27A" stroke-width="2"/>
+          <circle cx="28" cy="27" r="2.7" fill="#E45A63"/>
+          <circle cx="40" cy="39" r="2.7" fill="#F4C752"/>
+          <circle cx="24" cy="47" r="2.7" fill="#7FB8E0"/>
+          <circle cx="44" cy="56" r="2.7" fill="#E45A63"/>
+          <circle cx="30" cy="57" r="2.7" fill="#F4C752"/>
+          <polygon points="34,2 36,7 41,7 37,10 38,15 34,12 30,15 31,10 27,7 32,7" fill="#FFD95E"/>
+        </svg>
+      </div>
+    `);
+  }
+
+  if (!wallItems.length && !floorItems.length) return '';
+
+  return `
+    <div class="shop-decor-stage">
+      ${wallItems.length ? `<div class="shop-wall-objects">${wallItems.join('')}</div>` : ''}
+      ${floorItems.length ? `
+        <div class="shop-floor-shelf-wrap">
+          <div class="shop-floor-objects">${floorItems.join('')}</div>
+          <div class="shop-shelf-plank"></div>
+        </div>
+      ` : ''}
+    </div>
+  `;
 }
 
 function renderShopDecorModal() {
@@ -277,7 +456,8 @@ function renderPreordersQueue() {
     .sort((a, b) => a.dueMinutes - b.dueMinutes)
     .map((p) => {
       const isDue = curMin >= p.dueMinutes;
-      const inShop = p.status === 'in_shop';
+     const inShop = p.status === 'in_shop';
+      const talkingToThisPreorder = activeClient && activeClient.preorder && activeClient.preorder.id === p.id && activeClient.status === 'talking';
       return `
         <div class="preorder-row ${isDue || inShop ? 'due-now' : ''}">
           <div style="flex:1; min-width:0;">
@@ -286,9 +466,11 @@ function renderPreordersQueue() {
               ${p.qty} шт. «${escapeHtml(p.flowerName)}» (${p.reward} ₽)
             </div>
           </div>
-          ${inShop ? `
-            <span class="badge badge-ok">В зале</span>
-          ` : `
+          ${inShop ? (
+            talkingToThisPreorder
+              ? '<span class="badge badge-ok">У прилавка</span>'
+              : `<button class="btn btn-primary" data-call-inshop="${p.id}" style="padding:5px 9px; font-size:11px;">🔔 Принять</button>`
+          ) : `
             <button class="btn btn-soft" data-go-assemble="${p.id}" style="padding:5px 8px; font-size:11px;">
               💐 Собрать
             </button>
@@ -311,7 +493,9 @@ function renderPreordersQueue() {
 
 function renderClientZone(closedNow) {
   const waitingDue = (gameState.preorders || []).find(
-    (p) => p.day === gameState.day && p.status === 'waiting' && (gameState.timeMinutes || 540) >= p.dueMinutes
+    (p) =>
+      p.day === gameState.day &&
+      (p.status === 'in_shop' || (p.status === 'waiting' && (gameState.timeMinutes || 540) >= p.dueMinutes))
   );
 
   if (!activeClient) {
@@ -687,6 +871,19 @@ function bindShopEvents(container, onHudUpdate, showToast) {
     saveState();
     playBellSound();
     summonPreorderClient(pre, onHudUpdate, showToast);
+  });
+
+  container.querySelectorAll('[data-call-inshop]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const pre = gameState.preorders.find((p) => p.id === btn.dataset.callInshop);
+      if (!pre || isAiThinking) return;
+      if (isClientTalkingNow()) {
+        showToast('Сначала заверши разговор с текущим покупателем!');
+        return;
+      }
+      playBellSound();
+      summonPreorderClient(pre, onHudUpdate, showToast);
+    });
   });
 
   document.getElementById('btn-call-client')?.addEventListener('click', () => {
@@ -1117,7 +1314,7 @@ function completeSale(offer, onHudUpdate, showToast) {
   gameState.mood = Math.min(100, gameState.mood + (tip > 0 ? 5 : 3));
   pendingOffer = null;
 
-  const justClosed = addGameMinutes(15);
+  const justClosed = addGameMinutes(10);
   playCoinSound();
   onHudUpdate();
   if (justClosed) {

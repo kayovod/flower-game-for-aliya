@@ -1,6 +1,6 @@
 import { AI_PROVIDERS, getGameDateObj, getHolidayForDate, getSeasonInfo } from '../config.js';
 import { gameState, aiSettings, saveState, saveAiSettings, resetState, setCurrentGameDate } from '../state.js';
-import { testAiConnection } from '../ai.js';
+import { testAiConnection, resolvePlayerGender } from '../ai.js';
 import { setAmbientMode, stopAmbient } from '../sound.js';
 
 let currentSubTab = 'finance'; // 'finance' | 'settings'
@@ -109,6 +109,12 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
   const curDateStr = `${curDateObj.getFullYear()}-${String(curDateObj.getMonth() + 1).padStart(2, '0')}-${String(curDateObj.getDate()).padStart(2, '0')}`;
   const curSeason = getSeasonInfo(curDateObj);
 
+  const badgeName = (gameState.playerBadgeName || '').trim();
+  const resolvedBadgeGender = resolvePlayerGender(badgeName, gameState.playerGender);
+  const badgeStatusHtml = !badgeName
+    ? '<span class="badge badge-warn">Снят</span>'
+    : `<span class="badge badge-ok">${resolvedBadgeGender === 'female' ? '👩 Жен. род' : '👨 Муж. род'}</span>`;
+
   body.innerHTML = `
     <div class="card">
       <div class="row-between">
@@ -142,6 +148,39 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
         </div>
       </div>
       <button class="btn btn-primary" id="btn-save-shop-profile">💾 Сохранить параметры лавки</button>
+    </div>
+
+    <div class="card">
+      <div class="row-between">
+        <div class="card-title">🏷️ Бейджик флориста</div>
+        ${badgeStatusHtml}
+      </div>
+      <p class="muted-text" style="font-size:12px;">
+        Если впишешь имя на бейджике, клиенты в зале и в Direct будут иногда обращаться к тебе по имени (как в жизни — не всегда, но приятно).
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="badge-name-input">Твоё имя на бейджике</label>
+        <input
+          type="text"
+          class="form-input"
+          id="badge-name-input"
+          autocomplete="off"
+          data-form-type="other"
+          data-lpignore="true"
+          placeholder="Например: Алия (оставь пустым, чтобы снять)"
+          value="${escapeAttr(gameState.playerBadgeName || '')}"
+          maxlength="20"
+        />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="badge-gender-select">Обращение к тебе (род)</label>
+        <select class="form-select" id="badge-gender-select">
+          <option value="auto" ${(gameState.playerGender || 'auto') === 'auto' ? 'selected' : ''}>✨ Определять автоматически по имени</option>
+          <option value="female" ${gameState.playerGender === 'female' ? 'selected' : ''}>👩 Женский род (подсказала, молодец)</option>
+          <option value="male" ${gameState.playerGender === 'male' ? 'selected' : ''}>👨 Мужской род (подсказал, молодец)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-save-badge">🏷️ Сохранить бейджик</button>
     </div>
 
     <div class="card">
@@ -243,17 +282,6 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
     </div>
 
     <div class="card">
-      <div class="row-between">
-        <div class="card-title">☁️ Аккаунт Puter.js (если нужен)</div>
-        <span class="badge badge-warn" id="puter-status-badge">Проверка...</span>
-      </div>
-      <div class="row-between" style="gap: 8px;">
-        <button class="btn btn-soft" id="btn-puter-signin" style="flex: 1;">Войти в Puter</button>
-        <button class="btn btn-soft" id="btn-puter-signout" style="display: none;">Выйти</button>
-      </div>
-    </div>
-
-    <div class="card">
       <div class="card-title">🗑️ Сброс прогресса</div>
       <button class="btn btn-danger" id="btn-reset-game">🗑️ Начать игру заново</button>
       <p style="margin-top: 8px; padding: 10px; border-radius: 12px; background: var(--bg-accent-soft); color: var(--primary-hover); font-size: 12.5px; font-weight: 800; text-align: center; line-height: 1.45;">
@@ -262,64 +290,8 @@ async function renderSettingsTab(body, onHudUpdate, showToast) {
     </div>
   `;
 
-  setupPuterBlock(showToast);
   setupAiForm(showToast);
   setupGameControls(onHudUpdate, showToast);
-}
-
-async function setupPuterBlock(showToast) {
-  const badge = document.getElementById('puter-status-badge');
-  const btnIn = document.getElementById('btn-puter-signin');
-  const btnOut = document.getElementById('btn-puter-signout');
-  if (!badge || !btnIn || !btnOut) return;
-
-  const refreshStatus = async () => {
-    if (typeof window.puter === 'undefined' || !window.puter.auth) {
-      badge.className = 'badge badge-warn';
-      badge.textContent = 'Не загружен';
-      return;
-    }
-    try {
-      const signedIn = window.puter.auth.isSignedIn();
-      if (signedIn) {
-        const user = await window.puter.auth.getUser();
-        badge.className = 'badge badge-ok';
-        badge.textContent = `Вход: ${user?.username || 'Активен'}`;
-        btnIn.style.display = 'none';
-        btnOut.style.display = 'inline-flex';
-      } else {
-        badge.className = 'badge badge-warn';
-        badge.textContent = 'Не подключен';
-        btnIn.style.display = 'inline-flex';
-        btnOut.style.display = 'none';
-      }
-    } catch (err) {
-      badge.className = 'badge badge-warn';
-      badge.textContent = 'Гость';
-    }
-  };
-
-  btnIn.addEventListener('click', async () => {
-    try {
-      await window.puter.auth.signIn();
-      showToast('Успешный вход в Puter!');
-      refreshStatus();
-    } catch (err) {
-      showToast('Авторизация отменена или недоступна');
-    }
-  });
-
-  btnOut.addEventListener('click', async () => {
-    try {
-      await window.puter.auth.signOut();
-      showToast('Вы вышли из аккаунта Puter');
-      refreshStatus();
-    } catch (err) {
-      showToast('Не удалось выйти');
-    }
-  });
-
-  refreshStatus();
 }
 
 function setupAiForm(showToast) {
@@ -396,6 +368,7 @@ function setupGameControls(onHudUpdate, showToast) {
   const petInput = document.getElementById('pet-name-input');
   const savePetBtn = document.getElementById('btn-save-pet-name');
   const saveShopBtn = document.getElementById('btn-save-shop-profile');
+  const saveBadgeBtn = document.getElementById('btn-save-badge');
   const resetBtn = document.getElementById('btn-reset-game');
 
   saveShopBtn?.addEventListener('click', () => {
@@ -450,6 +423,21 @@ function setupGameControls(onHudUpdate, showToast) {
     gameState.petName = newName;
     saveState();
     showToast(`🐱 Имя питомца изменено на «${newName}»`);
+  });
+
+  saveBadgeBtn?.addEventListener('click', () => {
+    const badgeName = document.getElementById('badge-name-input')?.value.trim() || '';
+    const genderMode = document.getElementById('badge-gender-select')?.value || 'auto';
+    gameState.playerBadgeName = badgeName;
+    gameState.playerGender = ['auto', 'female', 'male'].includes(genderMode) ? genderMode : 'auto';
+    saveState();
+    renderSettingsTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
+   if (badgeName) {
+      const resolved = resolvePlayerGender(badgeName, gameState.playerGender);
+      showToast(`🏷️ Бейджик «${badgeName}» надет (${resolved === 'female' ? 'женский род' : 'мужской род'})!`);
+    } else {
+      showToast('🏷️ Бейджик снят');
+    }
   });
 
   resetBtn.addEventListener('click', () => {

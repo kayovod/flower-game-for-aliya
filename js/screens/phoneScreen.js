@@ -24,17 +24,9 @@ let isPosting = false;
 let isFetchingDm = false;
 let openedDmId = null;
 let busyDmId = null;
-let rejectOpenDmId = null;
 let openCommentReplyKey = null;
 let busyCommentKey = null;
 let frostThermalWrap = true;
-
-const DIRECT_REJECT_TEMPLATES = [
-  'Нет нужных цветов в наличии',
-  'Слишком много заказов, не успеем',
-  'Слишком низкий бюджет для такого заказа',
-  'Лавка скоро закрывается'
-];
 
 const PROMO_CAMPAIGNS = [
   {
@@ -280,11 +272,16 @@ function renderInstaApp(body, onHudUpdate, showToast) {
   document.getElementById('btn-snap-interior')?.addEventListener('click', () => {
     playShutterSound();
     const shopPhotoUrl = captureShopInteriorPhoto();
+    const activeDecorNames = DECOR_CATALOG
+      .filter((d) => d.place === 'Магазин' && isShopDecorVisible(d.id))
+      .map((d) => d.name);
+    const decorNote = activeDecorNames.length ? `, декор: ${activeDecorNames.join(', ')}` : '';
+
     gameState.savedPhotos.unshift({
       id: 'shop_' + Date.now(),
       dataUrl: shopPhotoUrl,
       type: 'shop',
-      description: `Уютный интерьер цветочной лавки (${gameState.inventory.length} ваз с цветами)`,
+      description: `Уютный интерьер цветочной лавки (${gameState.inventory.length} ваз с цветами${decorNote})`,
       day: gameState.day
     });
     if (gameState.savedPhotos.length > 10) gameState.savedPhotos = gameState.savedPhotos.slice(0, 10);
@@ -440,7 +437,7 @@ async function handleCommentReply(postId, commentIdx, text, body, onHudUpdate, s
   }
 }
 
-/* ==================== 2. DIRECT (СВОРАЧИВАЕМЫЕ ЧАТЫ, БЛОКИ, ЗАКАЗЫ) ==================== */
+/* ==================== 2. DIRECT (ЖИВОЕ ОБЩЕНИЕ И УМНЫЕ ПРЕДЗАКАЗЫ) ==================== */
 function renderDirectApp(body, onHudUpdate, showToast) {
   if (openedDmId) {
     const activeDm = gameState.directMessages.find((m) => m.id === openedDmId);
@@ -485,7 +482,6 @@ function renderDirectApp(body, onHudUpdate, showToast) {
       const dm = gameState.directMessages.find((m) => m.id === row.dataset.openDm);
       if (!dm) return;
       openedDmId = dm.id;
-      rejectOpenDmId = null;
       if (!dm.read) {
         dm.read = true;
         saveState();
@@ -508,22 +504,23 @@ function renderDmListItem(dm) {
     icon = '⛔';
     statusText = 'Заблокирован';
     statusClass = 'badge-warn';
-  } else if (dm.kind === 'review') {
+  } else if (dm.kind === 'review' && !dm.order) {
     icon = '⭐';
     statusText = 'Отзыв';
-  } else if (dm.kind === 'preorder' && dm.order) {
+  } else if (dm.order) {
     icon = '💐';
     if (dm.order.done) {
       statusText = 'Выполнен ✓';
       statusClass = 'badge-ok';
     } else if (dm.order.rejected) {
-      statusText = 'Отклонён';
+      statusText = 'Отменён';
+      statusClass = 'badge-warn';
     } else if (dm.order.accepted) {
       statusText = `Ждём ${dm.order.dueTimeLabel}`;
       statusClass = 'badge-ok';
     } else {
-      statusText = `Заказ ${dm.order.dueTimeLabel}`;
-      statusClass = 'badge-ok';
+      statusText = `Запрос ${dm.order.dueTimeLabel}`;
+      statusClass = 'badge-warn';
     }
   }
 
@@ -547,7 +544,7 @@ function renderDmListItem(dm) {
 
 function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
   const isBusy = busyDmId === dm.id;
-  const hasOrder = dm.kind === 'preorder' && dm.order;
+  const hasOrder = Boolean(dm.order);
   const flowerName = dm.order?.flowerName || FLOWERS_CATALOG[dm.order?.typeId]?.name || 'цветы';
   const vaseMatch = hasOrder ? gameState.inventory.find((v) => v.typeId === dm.order.typeId && v.qty >= dm.order.qty) : null;
 
@@ -563,10 +560,49 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
     .join('');
 
   const isBlocked = Boolean(dm.blockedByClient || dm.blockedByPlayer);
-  const canActOnOrder = !isBlocked && hasOrder && !dm.order.done && !dm.order.rejected;
-  const isRejectOpen = rejectOpenDmId === dm.id;
-  const preObj = hasOrder ? gameState.preorders.find((p) => p.dmId === dm.id) : null;
+  const preObj = hasOrder ? gameState.preorders.find((p) => p.dmId === dm.id && p.status !== 'cancelled') : null;
   const alreadyInShop = preObj && preObj.status === 'in_shop';
+
+  let orderBannerHtml = '';
+  if (hasOrder) {
+    if (dm.order.done) {
+      orderBannerHtml = `
+        <div class="dm-order-banner agreed">
+          ✅ <strong>Выполнен:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • клиент забрал заказ.
+        </div>
+      `;
+    } else if (dm.order.rejected) {
+      orderBannerHtml = `
+        <div class="dm-order-banner cancelled">
+          ❌ <strong>Заказ отменён:</strong> клиент предупреждён и не придёт (если передумаешь — напиши в чат).
+        </div>
+      `;
+    } else if (dm.order.accepted) {
+      orderBannerHtml = `
+        <div class="dm-order-banner agreed">
+          ✅ <strong>Договорились!</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • к ${dm.order.dueTimeLabel} • ${dm.order.reward} ₽
+          ${vaseMatch
+            ? `<span style="color:var(--sage-dark); font-weight:800;"> • В наличии ✓</span>`
+            : `<span style="color:#9D6F1D; font-weight:800;"> • Докупи к приходу</span>`}
+          <div class="muted-text" style="font-size:10.5px; margin-top:2px;">
+            Если не сможешь выполнить — просто напиши об этом в чат, клиент поймёт и не придёт.
+          </div>
+        </div>
+      `;
+    } else {
+      orderBannerHtml = `
+        <div class="dm-order-banner">
+          💐 <strong>Запрос клиента:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • к ${dm.order.dueTimeLabel} • ~${dm.order.reward} ₽
+          ${vaseMatch
+            ? `<span style="color:var(--sage-dark); font-weight:800;"> • В наличии ✓</span>`
+            : `<span style="color:#9D6F1D; font-weight:800;"> • Нет в вазах</span>`}
+          <div class="muted-text" style="font-size:10.5px; margin-top:2px;">
+            Ответь в чате своими словами: договоритесь или откажи.
+          </div>
+        </div>
+      `;
+    }
+  }
 
   body.innerHTML = `
     <div class="dm-chat-topbar">
@@ -584,92 +620,38 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
     </div>
 
     <div class="dm-card">
-      <div class="dm-thread" style="max-height: 240px; overflow-y: auto;">
+      <div class="dm-thread" style="max-height: 250px; overflow-y: auto;">
         ${threadHtml}
         ${isBusy ? `<div class="dm-msg system">💬 ${escapeHtml(dm.senderName)} печатает...</div>` : ''}
       </div>
 
-      ${hasOrder ? `
-        <div class="muted-text" style="font-size:11.5px; background: var(--bg-soft); padding: 6px 8px; border-radius: 8px;">
-          💐 <strong>${dm.order.qty} шт. «${escapeHtml(flowerName)}»</strong> • к ${dm.order.dueTimeLabel} • ${dm.order.reward} ₽
-          ${!isBlocked && !dm.order.done && !dm.order.rejected ? (
-            vaseMatch
-              ? `<span style="color:var(--sage-dark); font-weight:700;"> • В наличии ✓</span>`
-              : `<span style="color:#9D6F1D; font-weight:700;"> • Нужно докупить к приходу</span>`
-          ) : ''}
-        </div>
-      ` : ''}
+      ${orderBannerHtml}
 
       ${dm.blockedByClient ? `
         <div class="dm-blocked-banner">⛔ Пользователь заблокировал вас из-за грубого общения. Переписка закрыта.</div>
       ` : dm.blockedByPlayer ? `
         <div class="dm-blocked-banner">🚫 Вы заблокировали этого пользователя.</div>
-      ` : `
-        ${canActOnOrder && !dm.order.accepted ? `
-          <div style="display:flex; gap:6px;">
-            <button class="btn btn-sage" data-accept-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="flex:1; padding:7px; font-size:12px;">
-              ✅ Принять на ${dm.order.dueTimeLabel}
-            </button>
-            <button class="btn btn-danger" data-open-reject-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding:7px 10px; font-size:12px;">
-              ❌ Отказать
-            </button>
-          </div>
-        ` : ''}
-
-        ${canActOnOrder && dm.order.accepted && !alreadyInShop ? `
-          <div style="display:flex; gap:6px; align-items:center;">
-            <span class="muted-text" style="font-size:11px; flex:1;">🕒 В очереди зала на ${dm.order.dueTimeLabel}</span>
-            <button class="btn btn-danger" data-open-reject-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding:5px 9px; font-size:11px;">
-              🚫 Отменить заказ
-            </button>
-          </div>
-        ` : ''}
-
-        ${alreadyInShop ? `
-          <span class="badge badge-warn" style="align-self:flex-start;">🔔 Клиент уже в зале забирает заказ!</span>
-        ` : ''}
-
-        ${isRejectOpen && canActOnOrder ? `
-          <div class="reject-box">
-            <div class="row-between">
-              <strong style="font-size:11.5px;">Причина отказа (клиент увидит её):</strong>
-              <button class="btn btn-soft" data-open-reject-dm="${dm.id}" style="padding:2px 7px; font-size:11px;">✕</button>
-            </div>
-            <div class="reject-chips">
-              ${DIRECT_REJECT_TEMPLATES.map((tpl) => `
-                <button class="reject-chip" data-dm-id="${dm.id}" data-reject-template="${escapeAttr(tpl)}" ${isBusy ? 'disabled' : ''}>
-                  ${escapeHtml(tpl)}
-                </button>
-              `).join('')}
-            </div>
-            <div style="display:flex; gap:5px;">
-              <input type="text" class="form-input" id="dm-reject-input-${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Или напиши свою причину..." style="padding:6px 8px; font-size:11.5px;" ${isBusy ? 'disabled' : ''} />
-              <button class="btn btn-danger" data-send-custom-reject="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding:6px 10px; font-size:11.5px;">
-                Отказать
-              </button>
-            </div>
-          </div>
-        ` : ''}
-
-        ${!(hasOrder && dm.order.rejected) && !(hasOrder && dm.order.done) ? `
-          <div class="row-between" style="gap: 6px;">
-            <input type="text" class="form-input" id="dm-reply-${dm.id}" data-dm-reply-input="${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Написать в Direct..." style="padding: 6px 9px; font-size: 12px;" ${isBusy ? 'disabled' : ''} />
-            <button class="btn btn-primary" data-reply-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding: 7px 10px; font-size: 12px;">➤</button>
-          </div>
-        ` : ''}
-      `}
+      ` : alreadyInShop ? `
+        <span class="badge badge-warn" style="align-self:flex-start;">🔔 Клиент уже в зале забирает заказ! Перейди в «Магазин».</span>
+      ` : !(hasOrder && dm.order.done) ? `
+        <div class="row-between" style="gap: 6px;">
+          <input type="text" class="form-input" id="dm-reply-${dm.id}" data-dm-reply-input="${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Напиши клиенту в Direct..." style="padding: 7px 10px; font-size: 12.5px;" ${isBusy ? 'disabled' : ''} />
+          <button class="btn btn-primary" data-reply-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding: 8px 12px; font-size: 12.5px;">➤</button>
+        </div>
+      ` : ''}
     </div>
   `;
 
+  const threadEl = body.querySelector('.dm-thread');
+  if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
+
   document.getElementById('btn-dm-back')?.addEventListener('click', () => {
     openedDmId = null;
-    rejectOpenDmId = null;
     renderPhoneScreen(onHudUpdate, showToast);
   });
 
   document.getElementById('btn-dm-block')?.addEventListener('click', () => {
     dm.blockedByPlayer = true;
-    rejectOpenDmId = null;
     if (dm.order && !dm.order.done) {
       dm.order.accepted = false;
       dm.order.rejected = true;
@@ -692,83 +674,6 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
     renderPhoneScreen(onHudUpdate, showToast);
   });
 
-  body.querySelectorAll('[data-accept-dm]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!dm.order || dm.order.accepted || dm.order.rejected || dm.order.done) return;
-
-      const closeMin = (gameState.closeHour || 21) * 60;
-      const curMin = gameState.timeMinutes || 540;
-      let dueMinutes = dm.order.dueMinutes || curMin + 60;
-      if (dueMinutes < curMin + 15) {
-        dueMinutes = Math.min(closeMin - 10, curMin + 35);
-      }
-      const dueTimeLabel = formatMinutesAsTime(dueMinutes);
-
-      dm.order.dueMinutes = dueMinutes;
-      dm.order.dueTimeLabel = dueTimeLabel;
-      dm.order.accepted = true;
-      dm.read = true;
-      rejectOpenDmId = null;
-
-      if (!Array.isArray(dm.thread) || dm.thread.length === 0) {
-        dm.thread = [{ sender: 'client', text: dm.text }];
-      }
-      dm.thread.push({
-        sender: 'system',
-        text: `✅ Предзаказ принят на ${dueTimeLabel}! Заказчик придёт в зал в это время.`
-      });
-
-      const flowerMeta = FLOWERS_CATALOG[dm.order.typeId];
-      const fName = dm.order.flowerName || flowerMeta?.name || 'цветы';
-
-      if (!gameState.preorders.find((p) => p.dmId === dm.id)) {
-        gameState.preorders.push({
-          id: 'pre_' + dm.id,
-          dmId: dm.id,
-          senderName: dm.senderName,
-          typeId: dm.order.typeId,
-          flowerName: fName,
-          qty: dm.order.qty,
-          reward: dm.order.reward,
-          dueMinutes,
-          dueTimeLabel,
-          day: gameState.day,
-          status: 'waiting'
-        });
-      }
-
-      saveState();
-      onHudUpdate();
-      showToast(`🕒 Предзаказ от ${dm.senderName} принят на ${dueTimeLabel}!`);
-      renderPhoneScreen(onHudUpdate, showToast);
-    });
-  });
-
-  body.querySelectorAll('[data-open-reject-dm]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      rejectOpenDmId = rejectOpenDmId === dm.id ? null : dm.id;
-      renderPhoneScreen(onHudUpdate, showToast);
-    });
-  });
-
-  body.querySelectorAll('[data-reject-template]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      handleDirectRejection(dm.id, btn.dataset.rejectTemplate, body, onHudUpdate, showToast);
-    });
-  });
-
-  body.querySelectorAll('[data-send-custom-reject]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const input = document.getElementById(`dm-reject-input-${dm.id}`);
-      const reason = input?.value.trim();
-      if (!reason) {
-        showToast('Напиши причину или нажми быстрый шаблон');
-        return;
-      }
-      handleDirectRejection(dm.id, reason, body, onHudUpdate, showToast);
-    });
-  });
-
   body.querySelectorAll('[data-reply-dm]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const input = document.getElementById(`dm-reply-${dm.id}`);
@@ -787,9 +692,47 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
   });
 }
 
+function syncAgreedPreorder(dm, orderData) {
+  dm.kind = 'preorder';
+  dm.order = {
+    ...orderData,
+    accepted: true,
+    rejected: false,
+    done: false
+  };
+
+  if (!Array.isArray(gameState.preorders)) gameState.preorders = [];
+  const existing = gameState.preorders.find(
+    (p) => p.dmId === dm.id && (p.status === 'waiting' || p.status === 'in_shop')
+  );
+  if (existing) {
+    existing.typeId = orderData.typeId;
+    existing.flowerName = orderData.flowerName;
+    existing.qty = orderData.qty;
+    existing.reward = orderData.reward;
+    existing.dueMinutes = orderData.dueMinutes;
+    existing.dueTimeLabel = orderData.dueTimeLabel;
+  } else {
+    gameState.preorders.push({
+      id: 'pre_' + dm.id + '_' + Date.now(),
+      dmId: dm.id,
+      senderName: dm.senderName,
+      typeId: orderData.typeId,
+      flowerName: orderData.flowerName,
+      qty: orderData.qty,
+      reward: orderData.reward,
+      dueMinutes: orderData.dueMinutes,
+      dueTimeLabel: orderData.dueTimeLabel,
+      day: gameState.day,
+      status: 'waiting'
+    });
+  }
+}
+
 async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
   const dm = gameState.directMessages.find((m) => m.id === dmId);
   if (!dm || busyDmId || dm.blockedByClient || dm.blockedByPlayer) return;
+  if (dm.order && dm.order.done) return;
 
   if (!Array.isArray(dm.thread)) {
     dm.thread = [{ sender: 'client', text: dm.text }];
@@ -799,10 +742,14 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
   dm.read = true;
   busyDmId = dmId;
 
+  const wasAccepted = Boolean(dm.order && dm.order.accepted);
+  const prevTimeLabel = dm.order?.dueTimeLabel || '';
+  const prevTypeId = dm.order?.typeId || '';
+
   renderDirectApp(body, onHudUpdate, showToast);
 
   try {
-    const res = await generateDirectFollowUp(dm, text, 'reply');
+    const res = await generateDirectFollowUp(dm, text);
     dm.thread.push({ sender: 'client', text: res.reply });
 
     if (res.blockedByClient) {
@@ -815,85 +762,51 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
       gameState.followers = Math.max(0, gameState.followers - 1);
       gameState.mood = Math.max(10, gameState.mood - 5);
       showToast(`⛔ ${dm.senderName} заблокировал(а) вас за грубость!`);
-    } else {
-      if (res.newOrder && !dm.order) {
-        dm.kind = 'preorder';
-        dm.order = {
-          ...res.newOrder,
-          accepted: false,
-          rejected: false,
-          done: false
-        };
-        showToast(`💐 ${dm.senderName} хочет оформить предзаказ в переписке!`);
+    } else if (res.dealDecision === 'cancelled') {
+      if (dm.order) {
+        dm.order.accepted = false;
+        dm.order.rejected = true;
+      }
+      gameState.preorders = gameState.preorders.filter((p) => !(p.dmId === dm.id && p.status !== 'done'));
+      if (wasAccepted || dm.order) {
+        dm.thread.push({ sender: 'system', text: '❌ Договорённость отменена — клиент не придёт в зал.' });
+        showToast(`❌ Заказ от ${dm.senderName} отменён`);
       } else {
         showToast(`💬 ${dm.senderName} ответил(а) в Direct`);
       }
-
-      if (!dm.rewardedFollowUp) {
-        dm.rewardedFollowUp = true;
-        gameState.mood = Math.max(0, Math.min(100, gameState.mood + (res.moodDelta || 2)));
-        if (text.length >= 6 && res.followerDelta > 0) {
-          gameState.followers += res.followerDelta;
-        }
+      gameState.mood = Math.max(10, gameState.mood + (res.moodDelta || 0));
+    } else if (res.dealDecision === 'agreed' && res.orderData) {
+      syncAgreedPreorder(dm, res.orderData);
+      const changedDetails = wasAccepted && (prevTimeLabel !== res.orderData.dueTimeLabel || prevTypeId !== res.orderData.typeId);
+      if (!wasAccepted || changedDetails) {
+        dm.thread.push({
+          sender: 'system',
+          text: `✅ Договорились! Клиент придёт к ${res.orderData.dueTimeLabel} за ${res.orderData.qty} шт. «${res.orderData.flowerName}».`
+        });
+        showToast(`🤝 Договорились с ${dm.senderName} на ${res.orderData.dueTimeLabel}!`);
+      } else {
+        showToast(`💬 ${dm.senderName} подтвердил(а) визит к ${res.orderData.dueTimeLabel}`);
       }
+    } else if (res.dealDecision === 'proposed' && res.orderData) {
+      dm.kind = 'preorder';
+      dm.order = {
+        ...res.orderData,
+        accepted: false,
+        rejected: false,
+        done: false
+      };
+      gameState.preorders = gameState.preorders.filter((p) => !(p.dmId === dm.id && p.status !== 'done'));
+      showToast(`💐 ${dm.senderName} предлагает предзаказ — ответь в чате!`);
+    } else {
+      showToast(`💬 ${dm.senderName} ответил(а) в Direct`);
     }
 
-    saveState();
-    onHudUpdate();
-  } finally {
-    busyDmId = null;
-    renderPhoneScreen(onHudUpdate, showToast);
-  }
-}
-
-async function handleDirectRejection(dmId, reason, body, onHudUpdate, showToast) {
-  const dm = gameState.directMessages.find((m) => m.id === dmId);
-  if (!dm || !dm.order || busyDmId || dm.blockedByClient || dm.blockedByPlayer) return;
-
-  if (!Array.isArray(dm.thread)) {
-    dm.thread = [{ sender: 'client', text: dm.text }];
-  }
-  dm.thread.push({
-    sender: 'player',
-    text: `Извините, не сможем выполнить заказ. Причина: ${reason}`
-  });
-  dm.read = true;
-  rejectOpenDmId = null;
-  busyDmId = dmId;
-
-  renderDirectApp(body, onHudUpdate, showToast);
-
-  try {
-    const res = await generateDirectFollowUp(dm, reason, 'reject');
-    dm.thread.push({ sender: 'client', text: res.reply });
-    dm.rejectAttempts = (dm.rejectAttempts || 0) + 1;
-
-    if (res.blockedByClient) {
-      dm.blockedByClient = true;
-      dm.order.rejected = true;
-      dm.order.accepted = false;
-      gameState.preorders = gameState.preorders.filter((p) => p.dmId !== dm.id);
-      gameState.followers = Math.max(0, gameState.followers - 1);
-      gameState.mood = Math.max(10, gameState.mood - 5);
-      showToast(`⛔ ${dm.senderName} заблокировал(а) вас за грубость!`);
-    } else if (res.persuadeAttempt) {
-      if (res.shiftMinutes) {
-        const closeMin = (gameState.closeHour || 21) * 60;
-        dm.order.dueMinutes = Math.min(closeMin - 10, (dm.order.dueMinutes || 720) + res.shiftMinutes);
-        dm.order.dueTimeLabel = formatMinutesAsTime(dm.order.dueMinutes);
+    if (!res.blockedByClient && !dm.rewardedFollowUp) {
+      dm.rewardedFollowUp = true;
+      gameState.mood = Math.max(0, Math.min(100, gameState.mood + (res.moodDelta || 2)));
+      if (text.length >= 6 && res.followerDelta > 0) {
+        gameState.followers += res.followerDelta;
       }
-      if (res.offerTipBoost) {
-        dm.order.reward += res.offerTipBoost;
-      }
-      dm.order.accepted = false;
-      gameState.preorders = gameState.preorders.filter((p) => p.dmId !== dm.id);
-      showToast(`💬 ${dm.senderName} просит не отказывать и предлагает компромисс!`);
-    } else {
-      dm.order.rejected = true;
-      dm.order.accepted = false;
-      gameState.preorders = gameState.preorders.filter((p) => p.dmId !== dm.id);
-      gameState.mood = Math.max(10, gameState.mood + (res.moodDelta || -1));
-      showToast(`Заказ от ${dm.senderName} отклонён`);
     }
 
     saveState();
@@ -1204,63 +1117,345 @@ function renderDecorApp(body, onHudUpdate, showToast) {
   });
 }
 
+function isShopDecorVisible(id) {
+  if (id === 'fridge') {
+    return Boolean(gameState.hasFridge || (gameState.decor || []).includes('fridge')) && !(gameState.hiddenDecor || []).includes('fridge');
+  }
+  return (gameState.decor || []).includes(id) && !(gameState.hiddenDecor || []).includes(id);
+}
+
 function captureShopInteriorPhoto() {
   const c = document.createElement('canvas');
   c.width = 480;
   c.height = 480;
   const ctx = c.getContext('2d');
 
-  const isEvening = gameState.timeIndex === 2;
+  const isEvening = gameState.timeIndex === 2 || (gameState.timeMinutes || 540) >= (gameState.closeHour || 21) * 60;
   const season = getSeasonInfo(getGameDateObj(gameState.startDate, gameState.day - 1));
-  ctx.fillStyle = isEvening ? '#DFCBB9' : '#F6ECE1';
+
+  if (gameState.powerOutage) {
+    ctx.fillStyle = gameState.candlesLit ? '#4E3F38' : '#3E373D';
+  } else {
+    ctx.fillStyle = isEvening ? '#DFCBB9' : '#F6ECE1';
+  }
   ctx.fillRect(0, 0, 480, 480);
 
-  if (gameState.decor.includes('vintage_wallpaper')) {
-    ctx.fillStyle = 'rgba(217, 138, 124, 0.14)';
-    for (let x = 25; x < 480; x += 60) {
-      for (let y = 30; y < 340; y += 60) {
+  // Винтажные обои
+  if (isShopDecorVisible('vintage_wallpaper')) {
+    ctx.fillStyle = 'rgba(217, 138, 124, 0.18)';
+    for (let x = 22; x < 480; x += 44) {
+      for (let y = 26; y < 340; y += 44) {
         ctx.beginPath();
-        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = 'rgba(137, 168, 139, 0.14)';
+    for (let x = 44; x < 480; x += 44) {
+      for (let y = 48; y < 340; y += 44) {
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
+  // Окно слева
   ctx.fillStyle = isEvening ? '#5E648B' : gameState.weather === 'rainy' ? '#95A9B8' : '#BCE1F5';
-  ctx.fillRect(45, 55, 190, 145);
+  ctx.fillRect(34, 58, 166, 128);
   ctx.fillStyle = season.id === 'winter' ? '#F2F7FA' : season.id === 'autumn' ? '#D98A4E' : '#9CC494';
-  ctx.fillRect(45, 165, 190, 35);
-
+  ctx.fillRect(34, 154, 166, 32);
   ctx.strokeStyle = '#FFFDF9';
-  ctx.lineWidth = 8;
-  ctx.strokeRect(45, 55, 190, 145);
+  ctx.lineWidth = 7;
+  ctx.strokeRect(34, 58, 166, 128);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(117, 58);
+  ctx.lineTo(117, 186);
+  ctx.moveTo(34, 124);
+  ctx.lineTo(200, 124);
+  ctx.stroke();
 
+  // Вывеска справа
   ctx.fillStyle = '#FFFDF9';
-  ctx.fillRect(265, 75, 165, 65);
-  ctx.strokeStyle = gameState.decor.includes('neon_sign') ? '#E58A94' : '#D5C3B3';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(265, 75, 165, 65);
-  ctx.fillStyle = '#5C4A42';
-  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillRect(236, 58, 206, 54);
+  ctx.strokeStyle = isShopDecorVisible('neon_sign') ? '#E58A94' : '#D5C3B3';
+  ctx.lineWidth = isShopDecorVisible('neon_sign') ? 4.5 : 3;
+  ctx.strokeRect(236, 58, 206, 54);
+  ctx.fillStyle = isShopDecorVisible('neon_sign') ? '#C96577' : '#5C4A42';
+  ctx.font = 'bold 19px Georgia, serif';
   ctx.textAlign = 'center';
-  ctx.fillText((gameState.shopName || 'Fleur Atelier').slice(0, 16), 347, 114);
+  ctx.fillText((gameState.shopName || 'Fleur Atelier').slice(0, 18), 339, 91);
 
+  // Цветочная арка с плющом сверху
+  if (isShopDecorVisible('shop_arch')) {
+    ctx.strokeStyle = '#5A8357';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(6, 52);
+    ctx.quadraticCurveTo(30, 14, 110, 14);
+    ctx.lineTo(370, 14);
+    ctx.quadraticCurveTo(450, 14, 474, 52);
+    ctx.stroke();
+
+    for (let lx = 38; lx <= 442; lx += 44) {
+      ctx.fillStyle = '#6E9E69';
+      ctx.beginPath();
+      ctx.ellipse(lx, 18, 11, 5.5, (lx % 88 === 0 ? 0.3 : -0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    [22, 126, 240, 354, 458].forEach((fx, idx) => {
+      const fy = idx === 0 || idx === 4 ? 36 : 16;
+      ctx.fillStyle = idx % 2 === 0 ? '#F29AA4' : '#F6B8BF';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFE28A';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Гирлянда из сердечек
+  if (isShopDecorVisible('hearts_garland_shop')) {
+    ctx.strokeStyle = '#C99B95';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(20, 32);
+    ctx.quadraticCurveTo(130, 52, 240, 34);
+    ctx.quadraticCurveTo(350, 52, 460, 32);
+    ctx.stroke();
+    [60, 130, 200, 280, 350, 420].forEach((hx, idx) => {
+      const hy = idx % 2 === 0 ? 44 : 40;
+      ctx.fillStyle = idx % 2 === 0 ? '#E87A88' : '#F4A6B1';
+      ctx.beginPath();
+      ctx.arc(hx - 4, hy, 4.5, 0, Math.PI * 2);
+      ctx.arc(hx + 4, hy, 4.5, 0, Math.PI * 2);
+      ctx.lineTo(hx, hy + 10);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  // Праздничный венок на стене
+  if (isShopDecorVisible('wreath_shop')) {
+    ctx.save();
+    ctx.strokeStyle = '#4D7D4E';
+    ctx.lineWidth = 11;
+    ctx.beginPath();
+    ctx.arc(248, 165, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#D95A62';
+    ctx.beginPath();
+    ctx.ellipse(240, 141, 8, 5, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(256, 141, 8, 5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    [231, 265, 248].forEach((bx, i) => {
+      ctx.fillStyle = i === 2 ? '#E8B84B' : '#D9534F';
+      ctx.beginPath();
+      ctx.arc(bx, i === 2 ? 185 : 165, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  // Винтажное зеркало на стене
+  if (isShopDecorVisible('shop_mirror')) {
+    ctx.save();
+    ctx.fillStyle = '#C9A36B';
+    ctx.strokeStyle = '#8F6E3E';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(324, 168, 22, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#DCECF5';
+    ctx.beginPath();
+    ctx.ellipse(324, 168, 16, 24, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(315, 158);
+    ctx.lineTo(331, 150);
+    ctx.moveTo(313, 170);
+    ctx.lineTo(333, 160);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Меловая доска «Букет дня»
+  if (isShopDecorVisible('shop_chalkboard')) {
+    ctx.save();
+    ctx.fillStyle = '#A97D59';
+    ctx.fillRect(368, 136, 70, 56);
+    ctx.fillStyle = '#3B4540';
+    ctx.fillRect(374, 142, 58, 44);
+    ctx.fillStyle = '#F5EFE6';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('БУКЕТ ДНЯ', 403, 154);
+    ctx.strokeStyle = '#98C496';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(403, 178);
+    ctx.lineTo(403, 166);
+    ctx.stroke();
+    ctx.fillStyle = '#F29AA4';
+    ctx.beginPath();
+    ctx.arc(403, 164, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Холодильная витрина
+  if (isShopDecorVisible('fridge')) {
+    ctx.save();
+    ctx.fillStyle = '#E8F3F7';
+    ctx.strokeStyle = '#A6C1CC';
+    ctx.lineWidth = 3;
+    ctx.fillRect(392, 206, 62, 134);
+    ctx.strokeRect(392, 206, 62, 134);
+    ctx.fillStyle = '#D2EAF4';
+    ctx.fillRect(399, 214, 48, 102);
+    ctx.strokeStyle = '#A6C1CC';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(399, 265);
+    ctx.lineTo(447, 265);
+    ctx.stroke();
+    ctx.fillStyle = '#E87A88';
+    ctx.beginPath();
+    ctx.arc(415, 250, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#F4C752';
+    ctx.beginPath();
+    ctx.arc(431, 250, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#B59ED6';
+    ctx.beginPath();
+    ctx.arc(423, 302, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Новогодняя ёлка в углу за прилавком
+  if (isShopDecorVisible('xmas_tree_shop')) {
+    ctx.save();
+    ctx.fillStyle = '#9E6B4B';
+    ctx.fillRect(42, 316, 20, 24);
+    ctx.fillStyle = '#3D7047';
+    ctx.beginPath();
+    ctx.moveTo(52, 232);
+    ctx.lineTo(14, 322);
+    ctx.lineTo(90, 322);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#4B8556';
+    ctx.beginPath();
+    ctx.moveTo(52, 208);
+    ctx.lineTo(22, 278);
+    ctx.lineTo(82, 278);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#FFD95E';
+    ctx.beginPath();
+    ctx.arc(52, 202, 7, 0, Math.PI * 2);
+    ctx.fill();
+    [
+      { x: 44, y: 254, c: '#E45A63' },
+      { x: 62, y: 268, c: '#F4C752' },
+      { x: 36, y: 296, c: '#7FB8E0' },
+      { x: 64, y: 304, c: '#E45A63' }
+    ].forEach((b) => {
+      ctx.fillStyle = b.c;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  // Деревянный прилавок
   ctx.fillStyle = '#C9A789';
-  ctx.fillRect(30, 340, 420, 22);
+  ctx.fillRect(24, 340, 432, 22);
   ctx.fillStyle = '#EADBC9';
   ctx.fillRect(0, 362, 480, 118);
 
+  // Живые вазы с цветами на прилавке
   const vaseColors = ['#EBD9CE', '#DCE6DB', '#F3DFDC', '#DFD9EA'];
   const count = Math.min(4, Math.max(1, gameState.inventory.length));
+  const hasPumpkins = isShopDecorVisible('pumpkins_shop');
+  const startX = hasPumpkins ? 70 : 95;
+  const stepX = hasPumpkins ? 72 : 88;
+
   for (let i = 0; i < count; i++) {
-    const vx = 85 + i * 95;
-    ctx.fillStyle = vaseColors[i % vaseColors.length];
-    ctx.fillRect(vx, 280, 42, 60);
+    const item = gameState.inventory[i];
+    const meta = item ? FLOWERS_CATALOG[item.typeId] : null;
+    const vx = startX + i * stepX;
+    ctx.fillStyle = meta?.vaseColor || vaseColors[i % vaseColors.length];
+    ctx.fillRect(vx, 282, 38, 58);
     ctx.fillStyle = '#6E9971';
-    ctx.fillRect(vx + 18, 235, 6, 45);
-    ctx.fillStyle = i % 2 === 0 ? '#E98387' : '#F4C752';
+    ctx.fillRect(vx + 16, 238, 6, 44);
+    ctx.fillStyle =
+      meta?.color === 'красный' ? '#E2626B' :
+      meta?.color === 'жёлтый' ? '#F4C752' :
+      meta?.color === 'белый' ? '#FFFDF9' :
+      meta?.color === 'сиреневый' ? '#B296D4' :
+      meta?.color === 'голубой' || meta?.color === 'синий' ? '#79AFDC' :
+      '#E98387';
     ctx.beginPath();
-    ctx.arc(vx + 21, 228, 16, 0, Math.PI * 2);
+    ctx.arc(vx + 19, 232, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Осенние тыквы прямо на прилавке справа
+  if (hasPumpkins) {
+    ctx.save();
+    // Листочки
+    ctx.fillStyle = '#D96E34';
+    ctx.beginPath();
+    ctx.ellipse(354, 336, 10, 5, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Большая тыква
+    ctx.strokeStyle = '#5A7247';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(384, 300);
+    ctx.lineTo(388, 290);
+    ctx.stroke();
+    ctx.fillStyle = '#DF7135';
+    ctx.beginPath();
+    ctx.ellipse(384, 321, 22, 19, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#F29457';
+    ctx.beginPath();
+    ctx.ellipse(384, 321, 8, 19, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Вторая светлая тыковка рядом
+    ctx.fillStyle = '#E8AE52';
+    ctx.beginPath();
+    ctx.ellipse(420, 326, 15, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#F5C776';
+    ctx.beginPath();
+    ctx.ellipse(420, 326, 6, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Свечка при отключении света
+  if (gameState.powerOutage && gameState.candlesLit) {
+    ctx.fillStyle = '#FFFDF9';
+    ctx.fillRect(36, 314, 12, 26);
+    ctx.fillStyle = 'rgba(255, 200, 90, 0.35)';
+    ctx.beginPath();
+    ctx.arc(42, 304, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFB74D';
+    ctx.beginPath();
+    ctx.ellipse(42, 306, 4, 7, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -1271,6 +1466,7 @@ function captureShopInteriorPhoto() {
 
   return c.toDataURL('image/jpeg', 0.85);
 }
+
 
 function escapeHtml(str) {
   return String(str || '')
