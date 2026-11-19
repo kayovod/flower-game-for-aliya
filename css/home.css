@@ -127,23 +127,31 @@
 }
 
 .home-sofa-wrap {
-  width: 112px;
+  position: absolute;
+  bottom: 24px;
+  left: 44%;
+  transform: translateX(-50%);
+  width: 114px;
   height: 54px;
+  pointer-events: none;
+  z-index: 2;
+  filter: drop-shadow(0 3px 4px rgba(74, 62, 57, 0.14));
 }
 
 .home-lamp-wrap {
-  width: 64px;
-  height: 112px;
+  width: 60px;
+  height: 108px;
   position: relative;
   flex-shrink: 0;
+  margin-bottom: -6px;
 }
 
 .home-lamp-glow {
   position: absolute;
   top: 4px;
   left: -16px;
-  width: 96px;
-  height: 96px;
+  width: 92px;
+  height: 92px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 224, 145, 0.44) 0%, rgba(255, 224, 145, 0) 70%);
   pointer-events: none;
@@ -153,7 +161,7 @@
 .home-walk-stage {
   position: relative;
   width: 100%;
-  height: 94px;
+  height: 108px;
   margin-top: 2px;
   z-index: 3;
 }
@@ -337,4 +345,120 @@
   cursor: pointer;
   z-index: 5;
   transition: left 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s ease-out;
+}
+
+/* Новые квартиры: уютная студия, двушка с балконом, тёплая роскошная мансарда */
+.home-room-scene.loc-home_studio {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 253, 249, 0.22) 0 18px, transparent 18px 36px),
+    radial-gradient(circle at 80% 25%, rgba(255, 240, 214, 0.55), transparent 52%),
+    linear-gradient(180deg, #F6E9DC 0%, #ECD8C5 58%, #D7BE9F 58%, #C4A588 100%);
+}
+
+.home-room-scene.loc-home_balcony {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 22px, transparent 22px 44px),
+    linear-gradient(180deg, #FCF8F2 0%, #F1E9DD 58%, #E1CCB4 58%, #CEB39A 100%);
+  border-color: #D2C3B3;
+  padding-bottom: 12px;
+}
+
+.home-balcony-door {
+  width: 90px;
+  height: 116px;
+  border-radius: 14px 14px 4px 4px;
+  border: 4px solid #FFFDF9;
+  background: linear-gradient(180deg, #AEDDF5 0%, #E1F3FA 100%);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(74, 62, 57, 0.12);
+}
+
+.home-balcony-door.night {
+  background: linear-gradient(180deg, #3D456E 0%, #7F6D8F 100%);
+}
+
+/* Дорогая, светлая, тёплая и уютная мансарда с камином */
+.home-room-scene.loc-home_loft {
+  background:
+    radial-gradient(circle at 82% 44%, rgba(255, 214, 138, 0.48) 0%, transparent 52%),
+    radial-gradient(circle at 18% 22%, rgba(255, 248, 232, 0.65) 0%, transparent 45%),
+    linear-gradient(180deg, #FFF9F0 0%, #F7EAD8 58%, #DFBE99 58%, #CCA47B 100%);
+  border: 2px solid #DFBA8C;
+  box-shadow: inset 0 0 28px rgba(255, 224, 165, 0.36), var(--shadow-card);
+}
+
+.home-loft-beams {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.home-studio-art {
+  width: 52px;
+  height: 38px;
+  filter: drop-shadow(0 2px 3px rgba(74, 62, 57, 0.12));
+}
+
+.home-room-scene.loc-home_loft .home-window {
+  width: 112px;
+  height: 86px;
+  border: 4px solid #FFFDF9;
+  border-radius: 34px 34px 12px 12px;
+  background: linear-gradient(180deg, #2C3764 0%, #58669A 70%, #8E82A1 100%);
+  box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.18), 0 0 0 3px #E9D2B5;
+}
+
+.home-room-scene.loc-home_loft .home-window.day {
+  background: linear-gradient(180deg, #A3D9F7 0%, #DFF2FC 75%, #F2E7DA 100%);
+}
+
+.home-fireplace {
+  position: relative;
+  width: 102px;
+  height: 98px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 12px rgba(255, 168, 76, 0.34));
+}
+
+.fireplace-flame {
+  animation: fireFlicker 0.85s infinite alternate ease-in-out;
+  transform-origin: center bottom;
+}
+
+@keyframes fireFlicker {
+  0% { transform: scale(0.95, 0.96); opacity: 0.9; }
+  100% { transform: scale(1.06, 1.08); opacity: 1; }
+}
+
+.home-rare-decor-spot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 3px 4px rgba(74, 62, 57, 0.2));
+}
+
+.home-cat-tower-floor {
+  position: absolute;
+  bottom: 10px;
+  right: 54px;
+  width: 68px;
+  height: 112px;
+  pointer-events: none;
+  z-index: 2;
+  filter: drop-shadow(0 3px 5px rgba(74, 62, 57, 0.16));
+}
+
+.home-window-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
 }

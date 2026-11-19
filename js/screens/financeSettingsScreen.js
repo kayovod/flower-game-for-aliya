@@ -4,6 +4,7 @@ import { testAiConnection, resolvePlayerGender } from '../ai.js';
 import { setAmbientMode, stopAmbient } from '../sound.js';
 
 let currentSubTab = 'finance'; // 'finance' | 'settings'
+const ADMIN_UNLOCK_KEY = 'fleur_atelier_admin_v1';
 
 export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
   const container = document.getElementById('screen-finance');
@@ -24,6 +25,7 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
     </div>
 
     <div id="finance-subtab-body" style="display: flex; flex-direction: column; gap: 12px;"></div>
+    <div id="finance-admin-footer" style="margin-top: 8px;"></div>
   `;
 
   container.querySelectorAll('[data-subtab]').forEach((btn) => {
@@ -35,13 +37,14 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
 
   const body = document.getElementById('finance-subtab-body');
   if (currentSubTab === 'finance') {
-    renderFinanceTab(body);
+    renderFinanceTab(body, onHudUpdate, showToast);
   } else {
     renderSettingsTab(body, onHudUpdate, showToast);
   }
+  renderAdminFooter(onHudUpdate, showToast);
 }
 
-function renderFinanceTab(body) {
+function renderFinanceTab(body, onHudUpdate, showToast) {
   const curDate = getGameDateObj(gameState.startDate, gameState.day - 1);
   const todayHoliday = getHolidayForDate(curDate);
   const holidayText = todayHoliday
@@ -52,6 +55,31 @@ function renderFinanceTab(body) {
     gameState.money >= 0
       ? '<span class="badge badge-ok">Плюс</span>'
       : '<span class="badge badge-warn">Долг арендодателю!</span>';
+
+  const employees = Array.isArray(gameState.employees) ? gameState.employees : [];
+  const totalPayroll = employees.reduce((sum, e) => sum + (Number(e.salary) || 0), 0);
+  const employeesHtml = employees.length
+    ? employees
+        .map(
+          (emp) => `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--bg-soft); padding:8px 10px; border-radius:10px;">
+            <div style="flex:1; min-width:0;">
+              <strong style="font-size:12.5px;">${emp.roleIcon || '💼'} ${escapeHtml(emp.name)}, ${emp.age}</strong>
+              <div class="muted-text" style="font-size:11px;">
+                ${escapeHtml(emp.roleName)} • ${escapeHtml(emp.locationName)}
+              </div>
+              <div class="muted-text" style="font-size:10.5px;">
+                🕒 ${escapeHtml(emp.scheduleLabel)}${emp.hasCar ? ' • 🚗 Своё авто' : ''} • <strong>${emp.salary} ₽/см.</strong>
+              </div>
+            </div>
+            <button class="btn btn-danger" data-fire-emp="${emp.id}" style="padding:5px 8px; font-size:11px; flex-shrink:0;">
+              Уволить
+            </button>
+          </div>
+        `
+        )
+        .join('')
+    : `<p class="muted-text" style="font-size:12px;">Команда пока не набрана. Подай объявление в «📱 Телефон» → «📸 Insta» кнопкой «📢 Подать объявление о работе»!</p>`;
 
   body.innerHTML = `
     <div class="card">
@@ -70,6 +98,16 @@ function renderFinanceTab(body) {
       <div class="row-between">
         <span class="muted-text">До оплаты аренды:</span>
         <strong>${gameState.daysUntilRent} дн.</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row-between">
+        <div class="card-title">👥 Команда лавки (${employees.length})</div>
+        ${employees.length ? `<span class="badge badge-ok">${totalPayroll.toLocaleString('ru-RU')} ₽/см.</span>` : ''}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        ${employeesHtml}
       </div>
     </div>
 
@@ -94,6 +132,20 @@ function renderFinanceTab(body) {
       <p class="muted-text">${holidayText}</p>
     </div>
   `;
+
+  body.querySelectorAll('[data-fire-emp]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const empId = btn.dataset.fireEmp;
+      const emp = (gameState.employees || []).find((e) => e.id === empId);
+      if (!emp) return;
+      if (confirm(`Точно уволить сотрудника ${emp.name} (${emp.roleName})?`)) {
+        gameState.employees = (gameState.employees || []).filter((e) => e.id !== empId);
+        saveState();
+        showToast(`${emp.name} уволен(а) из команды`);
+        renderFinanceSettingsScreen(onHudUpdate, showToast);
+      }
+    });
+  });
 }
 
 async function renderSettingsTab(body, onHudUpdate, showToast) {
@@ -432,7 +484,7 @@ function setupGameControls(onHudUpdate, showToast) {
     gameState.playerGender = ['auto', 'female', 'male'].includes(genderMode) ? genderMode : 'auto';
     saveState();
     renderSettingsTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
-   if (badgeName) {
+    if (badgeName) {
       const resolved = resolvePlayerGender(badgeName, gameState.playerGender);
       showToast(`🏷️ Бейджик «${badgeName}» надет (${resolved === 'female' ? 'женский род' : 'мужской род'})!`);
     } else {
@@ -447,6 +499,93 @@ function setupGameControls(onHudUpdate, showToast) {
       window.location.reload();
     }
   });
+}
+
+function renderAdminFooter(onHudUpdate, showToast) {
+  const footer = document.getElementById('finance-admin-footer');
+  if (!footer) return;
+
+  let isUnlocked = false;
+  try {
+    isUnlocked = localStorage.getItem(ADMIN_UNLOCK_KEY) === '1';
+  } catch (e) {
+    isUnlocked = false;
+  }
+
+  if (!isUnlocked) {
+    footer.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:center; gap:6px; opacity:0.7;">
+        <input
+          type="text"
+          class="form-input"
+          id="admin-secret-input"
+          autocomplete="off"
+          data-form-type="other"
+          data-lpignore="true"
+          placeholder="Служебная строка..."
+          style="padding:5px 9px; font-size:11px; max-width:165px;"
+        />
+      </div>
+    `;
+    const input = document.getElementById('admin-secret-input');
+    const tryUnlockAdmin = () => {
+      if (input?.value.trim().toLowerCase() === 'admin') {
+        try {
+          localStorage.setItem(ADMIN_UNLOCK_KEY, '1');
+        } catch (e) {}
+        showToast('🔓 Панель баланса разблокирована!');
+        renderAdminFooter(onHudUpdate, showToast);
+      }
+    };
+    input?.addEventListener('input', tryUnlockAdmin);
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') tryUnlockAdmin();
+    });
+    return;
+  }
+
+  footer.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+      <input
+        type="number"
+        class="form-input"
+        id="admin-money-input"
+        autocomplete="off"
+        data-form-type="other"
+        value="${gameState.money}"
+        placeholder="Сумма ₽..."
+        style="padding:5px 9px; font-size:12px; width:135px;"
+      />
+      <button class="btn btn-sage" id="btn-admin-apply-money" style="padding:5px 10px; font-size:11.5px;">
+        💰 Задать ₽
+      </button>
+    </div>
+  `;
+
+  const applyMoney = () => {
+    const val = Number(document.getElementById('admin-money-input')?.value);
+    if (Number.isNaN(val)) return;
+    gameState.money = Math.round(val);
+    gameState.rentWarning = gameState.money < 0;
+    saveState();
+    onHudUpdate();
+    if (currentSubTab === 'finance') {
+      renderFinanceTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
+    }
+    showToast(`💰 Баланс изменён: ${gameState.money.toLocaleString('ru-RU')} ₽`);
+  };
+
+  document.getElementById('btn-admin-apply-money')?.addEventListener('click', applyMoney);
+  document.getElementById('admin-money-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyMoney();
+  });
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function escapeAttr(str) {

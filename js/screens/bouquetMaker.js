@@ -14,7 +14,6 @@ let savedScreenScrollTop = 0;
 let savedTrayScrollLeft = 0;
 let savedWrapScrollLeft = 0;
 let savedRibbonScrollLeft = 0;
-let calcCounts = {};
 
 function getCachedFlowerImage(typeId, onLoadCallback) {
   if (imageCache[typeId]) return imageCache[typeId];
@@ -120,36 +119,6 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         .join('')
     : `<p class="muted-text">Вазы пусты</p>`;
 
-  const calcHtml = gameState.inventory.length
-    ? gameState.inventory
-        .map((item) => {
-          const meta = FLOWERS_CATALOG[item.typeId];
-          if (!meta) return '';
-          const unitPrice = item.discounted ? Math.round(meta.price * 0.6) : meta.price;
-          const val = calcCounts[item.uid] || '';
-          return `
-            <div class="calc-row">
-              <div style="flex:1; min-width:0;">
-                <strong style="font-size:12px;">${meta.name}</strong>
-                <div class="muted-text" style="font-size:10.5px;">${unitPrice} ₽/шт • В вазе: ${item.qty} (${item.freshness}%)</div>
-              </div>
-              <input
-                type="number"
-                class="calc-qty-input"
-                data-calc-uid="${item.uid}"
-                min="0"
-                max="${item.qty}"
-                value="${val}"
-                placeholder="0"
-                autocomplete="off"
-                data-form-type="other"
-              />
-            </div>
-          `;
-        })
-        .join('')
-    : `<p class="muted-text">Нет цветов для расчёта</p>`;
-
   const wrapsHtml = WRAPPINGS.map(
     (w) => `
       <button class="wrap-pill ${draft.wrappingId === w.id ? 'active' : ''}" data-wrap-id="${w.id}">
@@ -239,18 +208,8 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     </div>
 
     <div class="card">
-      <div class="card-title">🌷 Добавить по одному (свайпай полку)</div>
+      <div class="card-title">🌷 Добавить цветы (свайпай полку)</div>
       <div class="flower-tray">${trayHtml}</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">🧮 Калькулятор букета (введи количество)</div>
-      <div class="calc-list">${calcHtml}</div>
-      <div class="calc-summary-bar" id="calc-live-summary"></div>
-      <div class="row-between" style="gap:8px;">
-        <button class="btn btn-soft" id="btn-calc-reset" style="padding:8px 12px; font-size:12px;">Сброс</button>
-        <button class="btn btn-sage" id="btn-calc-apply" style="flex:1; padding:8px 12px; font-size:12.5px;">💐 Выложить на стол</button>
-      </div>
     </div>
 
     <div class="card">
@@ -271,39 +230,8 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     ${readyHtml}
   `;
 
-  updateCalculatorSummary();
   setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent);
   restoreScrollPositions();
-}
-
-function updateCalculatorSummary() {
-  const summaryEl = document.getElementById('calc-live-summary');
-  if (!summaryEl) return;
-
-  const draft = gameState.currentBouquet;
-  const wrap = WRAPPINGS.find((w) => w.id === draft.wrappingId) || WRAPPINGS[0];
-  const ribbon = RIBBONS.find((r) => r.id === draft.ribbonId) || RIBBONS[0];
-
-  let count = 0;
-  let flowersSum = 0;
-  gameState.inventory.forEach((item) => {
-    const qty = Math.max(0, Math.min(item.qty, Number(calcCounts[item.uid]) || 0));
-    if (qty > 0) {
-      const meta = FLOWERS_CATALOG[item.typeId];
-      const unitPrice = item.discounted ? Math.round(meta.price * 0.6) : meta.price;
-      count += qty;
-      flowersSum += qty * unitPrice;
-    }
-  });
-
-  if (count === 0) {
-    summaryEl.innerHTML = `<span>Выбрано: 0 шт.</span><span>0 ₽</span>`;
-    return;
-  }
-
-  const craftBonus = count >= 3 ? 50 : 0;
-  const totalWithPack = flowersSum + wrap.price + ribbon.price + craftBonus;
-  summaryEl.innerHTML = `<span>${count} шт. + упаковка</span><span>Итого: ${totalWithPack} ₽</span>`;
 }
 
 function calculateBouquetPrice(draft) {
@@ -465,43 +393,6 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
         onRefreshParent();
       }
     });
-  });
-
-  container.querySelectorAll('[data-calc-uid]').forEach((input) => {
-    input.addEventListener('input', () => {
-      const uid = input.dataset.calcUid;
-      const max = Number(input.max) || 999;
-      let val = parseInt(input.value, 10);
-      if (isNaN(val) || val < 0) val = 0;
-      if (val > max) {
-        val = max;
-        input.value = String(max);
-      }
-      calcCounts[uid] = val;
-      updateCalculatorSummary();
-    });
-  });
-
-  document.getElementById('btn-calc-reset')?.addEventListener('click', () => {
-    calcCounts = {};
-    refreshKeepingScroll();
-  });
-
-  document.getElementById('btn-calc-apply')?.addEventListener('click', () => {
-    let addedTotal = 0;
-    Object.entries(calcCounts).forEach(([uid, qty]) => {
-      const num = Number(qty) || 0;
-      if (num > 0 && addFlowerToDraftBouquet(uid, showToast, num, true)) {
-        addedTotal += num;
-      }
-    });
-    if (addedTotal === 0) {
-      showToast('Введи количество цветов в калькуляторе');
-      return;
-    }
-    calcCounts = {};
-    showToast(`💐 Выложено на стол: ${addedTotal} шт.`);
-    refreshKeepingScroll();
   });
 
   container.querySelectorAll('[data-wrap-id]').forEach((btn) => {

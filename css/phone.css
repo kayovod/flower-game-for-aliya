@@ -27,24 +27,24 @@
   background: #E2D6CA;
 }
 
-/* Док-панель 4 приложений */
+/* Док-панель 5 приложений */
 .phone-apps-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
 }
 
 .phone-app-btn {
   border: 1.5px solid var(--border-soft);
   background: var(--bg-soft);
-  border-radius: 14px;
-  padding: 8px 4px;
+  border-radius: 12px;
+  padding: 7px 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 800;
   color: var(--text-main);
   cursor: pointer;
@@ -63,7 +63,7 @@
 }
 
 .phone-app-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .phone-badge-dot {
@@ -469,4 +469,160 @@
 .dm-order-banner.cancelled {
   background: #FFF2F0;
   border-color: #E4B2AA;
+}
+
+/* Фото в переписке Direct и мини-галерея */
+.dm-msg-photo {
+  display: block;
+  width: 140px;
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  border: 1px solid rgba(74, 62, 57, 0.14);
+}
+
+.dm-photo-picker-box {
+  background: var(--bg-soft);
+  border: 1.5px dashed var(--primary);
+  border-radius: 11px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dm-attached-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFF7F4;
+  border: 1px solid #E9C5BD;
+  border-radius: 10px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+}
+
+.dm-attached-preview img {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.dm-order-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.dm-order-actions .btn {
+  flex: 1;
+  padding: 8px 9px;
+  font-size: 12px;
+}
+
+/* Риелтор и Антикварная лавка */
+.realtor-card {
+  background: #FFFFFF;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.realtor-card.current {
+  border-color: var(--sage);
+  background: #F6FAF5;
+}
+
+.antique-banner {
+  background: linear-gradient(135deg, #FFF6E8 0%, #F9EFE2 100%);
+  border: 1.5px dashed #D8A96A;
+  border-radius: 14px;
+  padding: 9px 10px;
+  font-size: 11.5px;
+  color: #5C4736;
+}
+/* Этап 4: Вакансии в InstaFlower и собеседования в Direct */
+.job-form-box {
+  background: linear-gradient(135deg, #F6FAF5 0%, #FFF9F5 100%);
+  border: 1.5px solid var(--sage);
+  border-radius: 14px;
+  padding: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insta-job-card {
+  background: linear-gradient(135deg, #FFFDF9 0%, #F4F9F3 100%);
+  border: 1.5px solid var(--sage);
+  border-radius: 14px;
+  padding: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insta-job-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.job-detail-pill {
+  background: #FFFFFF;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.candidate-banner {
+  background: linear-gradient(135deg, #F4F9F3 0%, #FFFDF9 100%);
+  border: 1.5px solid var(--sage);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.candidate-banner.hired {
+  background: var(--bg-sage-soft);
+  border-color: var(--sage-dark);
+}
+
+.candidate-banner.rejected {
+  background: #FFF2F0;
+  border-color: #E4B2AA;
+}
+
+.interview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.interview-chip {
+  border: 1px solid #C6D8C5;
+  background: #FFFFFF;
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.interview-chip:hover {
+  background: var(--bg-sage-soft);
+  border-color: var(--sage);
 }

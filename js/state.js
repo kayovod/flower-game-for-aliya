@@ -2,6 +2,7 @@ import {
   STORAGE_KEY,
   AI_SETTINGS_KEY,
   FLOWERS_CATALOG,
+  DECOR_CATALOG,
   getGameDateObj,
   getSeasonInfo,
   getWeatherForSeason
@@ -35,7 +36,7 @@ export function createInitialState() {
     closeHour: 21,
     money: 3500,
     day: 1,
-    timeIndex: 0, // 0: Утро, 1: День, 2: Вечер
+    timeIndex: 0,
     timeMinutes: 9 * 60,
     shownCloseHint: false,
     weather: getWeatherForSeason(season.id),
@@ -50,6 +51,7 @@ export function createInitialState() {
     totalSpent: 0,
     bouquetsSold: 0,
     inventory: createInitialInventory(),
+    accessoriesInventory: [],
     readyBouquets: [],
     savedPhotos: [],
     currentBouquet: {
@@ -61,12 +63,13 @@ export function createInitialState() {
     activePromo: null,
     directMessages: [],
     preorders: [],
+    jobPostings: [],
+    employees: [],
     lastAutoDmKey: '',
     wholesaleDay: 0,
     wholesaleDeals: [],
     energy: 100,
-  petName: 'Пискля',
-    playerBadgeName: '',
+    petName: 'Пискля',
     playerBadgeGender: 'auto',
     petMood: 80,
     petFedToday: false,
@@ -74,7 +77,13 @@ export function createInitialState() {
     candlesLit: false,
     rentWarning: false,
     decor: [],
-    hiddenDecor: []
+    decorInventory: [],
+    hiddenDecor: [],
+    shopLocationId: 'shop_basement',
+    homeLocationId: 'home_studio',
+    ownedLocations: ['shop_basement', 'home_studio'],
+    rareShopDay: 0,
+    rareShopIds: []
   };
 }
 
@@ -100,23 +109,38 @@ export function loadState() {
     if (!Array.isArray(state.inventory) || state.inventory.length === 0) {
       state.inventory = createInitialInventory();
     }
+    if (!Array.isArray(state.accessoriesInventory)) state.accessoriesInventory = [];
     if (!Array.isArray(state.readyBouquets)) state.readyBouquets = [];
     if (!Array.isArray(state.savedPhotos)) state.savedPhotos = [];
-   if (!Array.isArray(state.instaPosts)) state.instaPosts = [];
+    if (!Array.isArray(state.instaPosts)) state.instaPosts = [];
     if (!state.activePromo || typeof state.activePromo !== 'object') state.activePromo = null;
     if (!Array.isArray(state.directMessages)) state.directMessages = [];
     if (!Array.isArray(state.preorders)) state.preorders = [];
+    if (!Array.isArray(state.jobPostings)) state.jobPostings = [];
+    if (!Array.isArray(state.employees)) state.employees = [];
     if (typeof state.lastAutoDmKey !== 'string') state.lastAutoDmKey = '';
     state.directMessages = state.directMessages.map((dm) => ({
       read: Boolean(dm.replyText || dm.rejected || (dm.order && dm.order.done)),
       thread: Array.isArray(dm.thread) ? dm.thread : [],
       blockedByPlayer: Boolean(dm.blockedByPlayer),
       blockedByClient: Boolean(dm.blockedByClient),
+      jobApplication: dm.jobApplication || null,
       ...dm
     }));
     if (!Array.isArray(state.wholesaleDeals)) state.wholesaleDeals = [];
     if (!Array.isArray(state.decor)) state.decor = [];
+    if (!Array.isArray(state.decorInventory)) state.decorInventory = [];
+    state.decor = Array.from(new Set([...state.decor, ...state.decorInventory]));
+    state.decorInventory = [...state.decor];
     if (!Array.isArray(state.hiddenDecor)) state.hiddenDecor = [];
+    if (!state.shopLocationId) state.shopLocationId = 'shop_basement';
+    if (!state.homeLocationId) state.homeLocationId = 'home_studio';
+    if (!Array.isArray(state.ownedLocations)) state.ownedLocations = ['shop_basement', 'home_studio'];
+    if (!state.ownedLocations.includes('shop_basement')) state.ownedLocations.push('shop_basement');
+    if (!state.ownedLocations.includes('home_studio')) state.ownedLocations.push('home_studio');
+    if (typeof state.rareShopDay !== 'number') state.rareShopDay = 0;
+    if (!Array.isArray(state.rareShopIds)) state.rareShopIds = [];
+
     if (!state.currentBouquet || !Array.isArray(state.currentBouquet.stems)) {
       state.currentBouquet = { stems: [], wrappingId: 'craft', ribbonId: 'satin_rose' };
     }
@@ -129,7 +153,6 @@ export function loadState() {
     if (!['auto', 'female', 'male'].includes(state.playerBadgeGender)) state.playerBadgeGender = 'auto';
     if (!state.shopName) state.shopName = 'Fleur Atelier';
     if (!state.instaHandle) state.instaHandle = '@fleur_atelier';
-    if (typeof state.playerBadgeName !== 'string') state.playerBadgeName = '';
     if (!['auto', 'female', 'male'].includes(state.playerGender)) state.playerGender = 'auto';
     if (!state.startDate) state.startDate = '2026-02-08';
 
@@ -146,6 +169,27 @@ export function loadState() {
     console.warn('Не удалось прочитать сохранение, запущена новая игра:', err);
     return createInitialState();
   }
+}
+
+export function ensureDailyRareDecor() {
+  if (gameState.rareShopDay === gameState.day && Array.isArray(gameState.rareShopIds) && gameState.rareShopIds.length > 0) {
+    return gameState.rareShopIds;
+  }
+  const owned = new Set(gameState.decorInventory || gameState.decor || []);
+  const rotatable = DECOR_CATALOG.filter((d) => d.id !== 'fridge');
+  const unowned = rotatable.filter((d) => !owned.has(d.id));
+  const pool = unowned.length >= 2 ? unowned : rotatable;
+
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const count = Math.min(shuffled.length, Math.random() < 0.5 ? 2 : 3);
+  gameState.rareShopDay = gameState.day;
+  gameState.rareShopIds = shuffled.slice(0, count).map((d) => d.id);
+  saveState();
+  return gameState.rareShopIds;
+}
+
+export function getTotalGameMinutes() {
+  return ((gameState.day || 1) - 1) * 1440 + (gameState.timeMinutes || 540);
 }
 
 export function saveState() {
@@ -205,7 +249,7 @@ export function syncTimeIndexWithMinutes() {
 /** Прибавить минуты к игровым часам (возвращает true, если лавка впервые закрылась) */
 export function addGameMinutes(mins) {
   const wasClosed = isShopClosedNow();
-  const maxMin = 23 * 60 + 55; // Останавливаемся перед полуночью, пока игрок сам не ляжет спать
+  const maxMin = 23 * 60 + 55;
   gameState.timeMinutes = Math.min(maxMin, (gameState.timeMinutes || 540) + mins);
   syncTimeIndexWithMinutes();
 

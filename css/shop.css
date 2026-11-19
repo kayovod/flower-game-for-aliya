@@ -354,6 +354,7 @@
   padding: 9px 8px;
   font-size: 12px;
 }
+
 /* Всплывающее модальное окошко осмотра вазы */
 .vase-modal-overlay {
   position: fixed;
@@ -418,6 +419,7 @@
   font-size: 12px;
   font-weight: 700;
 }
+
 /* Сезоны за окном магазина и квартиры */
 .window-horizon.season-winter {
   background: #F2F7FA;
@@ -604,4 +606,231 @@
   align-items: flex-end;
   justify-content: center;
   filter: drop-shadow(0 3px 4px rgba(74, 62, 57, 0.14));
+}
+
+/* Витрина готовых букетов на прилавке */
+.counter-bouquets-box {
+  background: rgba(255, 253, 249, 0.72);
+  border: 1.5px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.counter-bouquets-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+
+.counter-bouquet-card {
+  position: relative;
+  flex-shrink: 0;
+  width: 116px;
+  background: #FFFDF9;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+
+.counter-bouquet-card.wanted {
+  border-color: var(--primary);
+  background: #FFF7F4;
+  box-shadow: 0 0 0 2px rgba(217, 138, 124, 0.24);
+}
+
+.counter-wanted-badge {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--primary);
+  color: #FFFDF9;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.counter-bouquet-img {
+  width: 74px;
+  height: 74px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+}
+
+.counter-bouquet-price {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--sage-dark);
+}
+
+.counter-bouquet-desc {
+  width: 100%;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.counter-bouquet-meta {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.counter-sell-btn {
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* Локации торгового зала — разный дизайн интерьера и окон */
+.shop-scene.loc-shop_basement {
+  background:
+    linear-gradient(180deg, #F5EAE0 0%, #ECDAC8 58%, #DDC5AE 58%, #CFAF93 60%, #E6D3BF 60%, #D9C0A6 100%);
+  border: 2px solid #D5BC9F;
+}
+
+.shop-scene.loc-shop_basement.time-evening {
+  background:
+    linear-gradient(180deg, #DFD0C4 0%, #D2BCAA 58%, #C0A38A 58%, #AE8E75 60%, #C8B19D 60%, #B89C84 100%);
+}
+
+.shop-scene.loc-shop_basement .shop-window {
+  height: 98px;
+  border: 4px solid #8C6D56;
+  border-radius: 12px;
+  box-shadow: inset 0 5px 12px rgba(45, 35, 30, 0.2), 0 0 0 3px #D8BFA8;
+}
+
+.shop-scene.loc-shop_pavilion {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 0 18px, transparent 18px 36px),
+    linear-gradient(180deg, #FEFCF8 0%, #EEF5ED 62%, #DCEAD9 62%, #CDE0CA 100%);
+  background-size: 36px 100%, 100% 100%;
+  border: 2px solid #BDD1BC;
+}
+
+.shop-scene.loc-shop_pavilion.time-evening {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 18px, transparent 18px 36px),
+    linear-gradient(180deg, #DDE7E0 0%, #CEDCD2 62%, #B9CCB9 62%, #A6BCAA 100%);
+  background-size: 36px 100%, 100% 100%;
+}
+
+.shop-scene.loc-shop_pavilion .shop-window {
+  height: 114px;
+  border: 4px solid #FFFFFF;
+  border-radius: 18px;
+  box-shadow: inset 0 3px 10px rgba(74, 62, 57, 0.09), 0 4px 12px rgba(125, 158, 127, 0.16);
+}
+
+.shop-scene.loc-shop_boutique {
+  background:
+    repeating-linear-gradient(0deg, rgba(196, 152, 132, 0.14) 0 13px, rgba(255, 253, 249, 0.55) 13px 15px),
+    linear-gradient(180deg, #FFFBF6 0%, #F7EBDF 62%, #E8D2BE 62%, #D7B99D 100%);
+  border: 2.5px solid #DFB873;
+  box-shadow: inset 0 8px 0 0 #FFFDF9, inset 0 12px 0 0 rgba(223, 184, 115, 0.58), var(--shadow-card);
+}
+
+.shop-scene.loc-shop_boutique.time-evening {
+  background:
+    repeating-linear-gradient(0deg, rgba(160, 120, 102, 0.16) 0 13px, rgba(235, 220, 208, 0.25) 13px 15px),
+    linear-gradient(180deg, #E7D7CB 0%, #D9C3B4 62%, #C5A692 62%, #B2917B 100%);
+}
+
+.shop-scene.loc-shop_boutique .shop-window {
+  height: 116px;
+  border: 4px solid #DFB873;
+  border-radius: 30px 30px 12px 12px;
+  box-shadow: inset 0 4px 12px rgba(74, 62, 57, 0.14), 0 4px 12px rgba(223, 184, 115, 0.28);
+}
+
+.window-scenery-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Архитектурные детали интерьера локаций */
+.shop-arch-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: -4px;
+  pointer-events: none;
+}
+
+.shop-hanging-plants {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 10px;
+}
+
+.shop-boutique-molding {
+  width: 100%;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border-bottom: 2px solid rgba(223, 184, 115, 0.65);
+  padding-bottom: 2px;
+}
+
+/* Полка под игрушки, шарики и конфеты в Павильоне и Бутике (чистый дизайн без текста) */
+.shop-accessories-shelf {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px 0;
+}
+
+.shop-acc-items-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 0 8px;
+  margin-bottom: -2px;
+}
+
+.shop-acc-visual {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 2px 3px rgba(74, 62, 57, 0.16));
+}
+
+.shop-acc-plank {
+  height: 8px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #E2C7A8 0%, #C49E7B 100%);
+  box-shadow: 0 3px 6px rgba(74, 62, 57, 0.14);
+}
+
+.shop-scene.loc-shop_boutique .shop-acc-plank {
+  background: linear-gradient(180deg, #EED296 0%, #CFA75E 100%);
 }

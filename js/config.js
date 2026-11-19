@@ -293,6 +293,64 @@ export const RIBBONS = [
   { id: 'black', name: 'Чёрная атласная', price: 55, color: '#332E30' },
   { id: 'gold', name: 'Золотая', price: 60, color: '#DFAB4E' }
 ];
+
+export const ACCESSORIES_CATALOG = {
+  balloon_heart: {
+    id: 'balloon_heart',
+    name: 'Гелиевый шар «Сердце»',
+    shortName: 'Шар «Сердце»',
+    icon: '🎈',
+    category: 'шарик',
+    price: 290,
+    wholesalePrice: 140
+  },
+  balloon_star: {
+    id: 'balloon_star',
+    name: 'Гелиевый шар «Звезда»',
+    shortName: 'Шар «Звезда»',
+    icon: '🌟',
+    category: 'шарик',
+    price: 270,
+    wholesalePrice: 130
+  },
+  plush_bear: {
+    id: 'plush_bear',
+    name: 'Плюшевый мишка',
+    shortName: 'Мишка',
+    icon: '🧸',
+    category: 'игрушка',
+    price: 850,
+    wholesalePrice: 420
+  },
+  plush_bunny: {
+    id: 'plush_bunny',
+    name: 'Плюшевый зайка',
+    shortName: 'Зайка',
+    icon: '🐰',
+    category: 'игрушка',
+    price: 790,
+    wholesalePrice: 390
+  },
+  choco_box: {
+    id: 'choco_box',
+    name: 'Коробка конфет ассорти',
+    shortName: 'Конфеты',
+    icon: '🍫',
+    category: 'конфеты',
+    price: 580,
+    wholesalePrice: 280
+  },
+  postcard: {
+    id: 'postcard',
+    name: 'Открытка с пожеланием',
+    shortName: 'Открытка',
+    icon: '💌',
+    category: 'открытка',
+    price: 150,
+    wholesalePrice: 60
+  }
+};
+
 export const INSTA_HASHTAGS = [
   '#флористика',
   '#авторскийбукет',
@@ -304,7 +362,6 @@ export const INSTA_HASHTAGS = [
 ];
 
 export const DECOR_CATALOG = [
-  // Магазин: техника и постоянный уют
   {
     id: 'fridge',
     name: 'Холодильная витрина',
@@ -365,7 +422,6 @@ export const DECOR_CATALOG = [
     effectText: 'Стильная табличка у витрины (+4% атмосферы)',
     moodBonus: 4
   },
-  // Магазин: сезонный и праздничный декор
   {
     id: 'xmas_tree_shop',
     name: 'Новогодняя ёлка в зал',
@@ -406,7 +462,6 @@ export const DECOR_CATALOG = [
     effectText: 'Тёплый осенний акцент в зале (+5% атмосферы)',
     moodBonus: 5
   },
-  // Квартира: мебель и постоянный уют
   {
     id: 'cozy_lamp',
     name: 'Тёплый торшер',
@@ -487,7 +542,6 @@ export const DECOR_CATALOG = [
     effectText: 'Воздушные занавески у окна (+4% атмосферы)',
     moodBonus: 4
   },
-  // Квартира: сезонный и праздничный декор
   {
     id: 'xmas_tree_home',
     name: 'Домашняя ёлка с огоньками',
@@ -527,8 +581,159 @@ export const DECOR_CATALOG = [
     price: 360,
     effectText: 'Романтичное украшение комнаты (+4% атмосферы)',
     moodBonus: 4
+  },
+  {
+    id: 'vintage_vase',
+    name: 'Антикварная фарфоровая ваза',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🏺',
+    price: 1350,
+    effectText: 'Редкий фарфор ручной росписи (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'retro_gramophone',
+    name: 'Ретро-граммофон',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '📻',
+    price: 2200,
+    effectText: 'Винтажный шарм в зале (+9% атмосферы)',
+    moodBonus: 9
+  },
+  {
+    id: 'gold_frame_art',
+    name: 'Картина в золотой раме',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🖼️',
+    price: 1650,
+    effectText: 'Ботанический натюрморт XIX века (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'marble_pedestal',
+    name: 'Мраморная тумба с кашпо',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🏛️',
+    price: 1900,
+    effectText: 'Роскошная подставка под букеты (+8% атмосферы)',
+    moodBonus: 8
+  },
+  {
+    id: 'designer_lamp',
+    name: 'Дизайнерский витражный торшер',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🪔',
+    price: 1600,
+    effectText: 'Тёплое мозаичное свечение дома (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'cat_tower',
+    name: 'Большой кошачий городок',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🏰',
+    price: 2400,
+    effectText: 'Многоуровневый комплекс для Пискли (+9% атмосферы)',
+    moodBonus: 9
+  },
+  {
+    id: 'antique_dresser',
+    name: 'Старинное трюмо с зеркалом',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🪞',
+    price: 1850,
+    effectText: 'Уютная винтажная мебель для комнаты (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'botanical_vinyl',
+    name: 'Винтажный проигрыватель дома',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '💿',
+    price: 1500,
+    effectText: 'Тёплый винил вечерами (+6% атмосферы)',
+    moodBonus: 6
   }
 ];
+
+export const SHOP_LOCATIONS = [
+  {
+    id: 'shop_basement',
+    name: 'Уютный подвальчик',
+    price: 0,
+    maxVases: 6,
+    maxWallDecor: 2,
+    windowView: 'Тротуар тихой улочки',
+    desc: 'Небольшой камерный зал: вид на тротуар, до 2 настенных украшений и стартовая витрина.'
+  },
+  {
+    id: 'shop_pavilion',
+    name: 'Светлый павильон в сквере',
+    price: 12000,
+    maxVases: 9,
+    maxWallDecor: 5,
+    windowView: 'Цветущий парк и фонтан',
+    desc: 'Панорамные окна в пол, вид на парк и фонтан, полка под подарки, 9 ваз и до 5 украшений.'
+  },
+  {
+    id: 'shop_boutique',
+    name: 'Бутик на главной улице',
+    price: 35000,
+    maxVases: 12,
+    maxWallDecor: 12,
+    windowView: 'Исторический проспект',
+    desc: 'Старинный кирпич, лепнина, золотые рейлы, вид на проспект, 12 ваз и место для всех коллекций.'
+  }
+];
+
+export const HOME_LOCATIONS = [
+  {
+    id: 'home_studio',
+    name: 'Крошечная студия',
+    price: 0,
+    desc: 'Уютная стартовая комната с диванчиком, окном во двор и местом для Пискли.'
+  },
+  {
+    id: 'home_balcony',
+    name: 'Двушка с балконом',
+    price: 15000,
+    desc: 'Просторные комнаты и панорамный балкон с растениями — Пискля гуляет по двум зонам!'
+  },
+  {
+    id: 'home_loft',
+    name: 'Мансарда с камином',
+    price: 45000,
+    desc: 'Светлая деревянная мансарда со звёздным небом, живым каменным камином и простором.'
+  }
+];
+
+export const JOB_ROLES = [
+  { id: 'assistant', name: 'Флорист-помощник', icon: '💐', baseSalary: 1200 },
+  { id: 'courier', name: 'Курьер', icon: '🚗', baseSalary: 1400 }
+];
+
+export const JOB_SCHEDULES = [
+  { id: 'full', label: 'Полный день (09:00–21:00)' },
+  { id: 'morning', label: 'Утренние смены (09:00–15:00)' },
+  { id: 'flex', label: 'Гибкий график / выходные' }
+];
+
 /** Возвращает объект Date для текущего игрового дня от выбранной даты старта */
 export function getGameDateObj(startDateStr, dayOffset = 0) {
   const parts = String(startDateStr || '2026-02-08').split('-').map(Number);
@@ -569,7 +774,6 @@ export function getWeatherForSeason(seasonId) {
   return r < 0.72 ? 'sunny' : 'rainy';
 }
 
-/** Проверка праздника по реальному числу календаря */
 /** Проверка праздника по реальному числу календаря */
 export function getHolidayForDate(dateObj) {
   const m = dateObj.getMonth() + 1;

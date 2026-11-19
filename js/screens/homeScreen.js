@@ -1,6 +1,7 @@
 import {
   FLOWERS_CATALOG,
   DECOR_CATALOG,
+  HOME_LOCATIONS,
   getGameDateObj,
   getSeasonInfo,
   getWeatherForSeason,
@@ -23,7 +24,8 @@ let isCatChasingBall = false;
 let showHomeDecorModal = false;
 
 function isHomeDecorShown(id) {
-  return (gameState.decor || []).includes(id) && !(gameState.hiddenDecor || []).includes(id);
+  const owned = new Set([...(gameState.decor || []), ...(gameState.decorInventory || [])]);
+  return owned.has(id) && !(gameState.hiddenDecor || []).includes(id);
 }
 
 function clearCatTimers() {
@@ -54,6 +56,7 @@ export function renderHomeScreen(onHudUpdate, showToast) {
   isCatChasingBall = false;
 
   const isDay = gameState.timeIndex < 2;
+  const currentHome = HOME_LOCATIONS.find((h) => h.id === gameState.homeLocationId) || HOME_LOCATIONS[0];
   const hasLamp = isHomeDecorShown('cozy_lamp');
   const hasBooks = isHomeDecorShown('bookshelf');
   const hasBed = isHomeDecorShown('cat_bed');
@@ -67,17 +70,33 @@ export function renderHomeScreen(onHudUpdate, showToast) {
   const hasPumpkins = isHomeDecorShown('pumpkins_home');
   const hasHearts = isHomeDecorShown('heart_pillow_home');
 
+  const hasDesignerLamp = isHomeDecorShown('designer_lamp');
+  const hasCatTower = isHomeDecorShown('cat_tower');
+  const hasDresser = isHomeDecorShown('antique_dresser');
+  const hasVinyl = isHomeDecorShown('botanical_vinyl');
+
   const petName = gameState.petName || 'Пискля';
   const curDate = getGameDateObj(gameState.startDate, gameState.day - 1);
   const season = getSeasonInfo(curDate);
 
+  const ownedSet = new Set([...(gameState.decor || []), ...(gameState.decorInventory || [])]);
   const ownedHomeDecorCount = DECOR_CATALOG.filter(
-    (d) => d.place === 'Квартира' && (gameState.decor || []).includes(d.id)
+    (d) => d.place === 'Квартира' && ownedSet.has(d.id)
   ).length;
+
+  const balconyHtml = currentHome.id === 'home_balcony'
+    ? renderBalconyDoorHtml(isDay, season.id)
+    : '';
+
+  const fireplaceHtml = currentHome.id === 'home_loft'
+    ? renderLoftFireplaceHtml()
+    : '';
 
   container.innerHTML = `
     <div class="screen-header">
-      <h1 class="screen-title">Уютная квартира</h1>
+      <div>
+        <h1 class="screen-title">${escapeHtml(currentHome.name)}</h1>
+      </div>
       <div style="display:flex; gap:5px; align-items:center;">
         <button class="btn btn-soft" id="btn-open-home-decor" style="padding:5px 9px; font-size:11.5px;">
           🎨 Декор (${ownedHomeDecorCount})
@@ -93,7 +112,9 @@ export function renderHomeScreen(onHudUpdate, showToast) {
       </div>
     ` : ''}
 
-    <div class="home-room-scene">
+    <div class="home-room-scene loc-${currentHome.id}">
+      ${renderHomeBackdropDetails(currentHome.id)}
+
       ${hasFairy ? `
         <div class="home-fairy-lights">
           ${Array.from({ length: 10 }, () => `
@@ -109,7 +130,7 @@ export function renderHomeScreen(onHudUpdate, showToast) {
         <div class="home-window-wrap">
           ${hasCurtains ? '<div class="home-curtain left"></div><div class="home-curtain right"></div>' : ''}
           <div class="home-window ${isDay ? 'day' : ''}">
-            <div class="window-horizon season-${season.id}" style="height:20px;"></div>
+            ${renderHomeWindowScenery(currentHome.id, isDay, season.id)}
             <div class="window-pane-v"></div>
             <div class="window-pane-h"></div>
           </div>
@@ -117,17 +138,26 @@ export function renderHomeScreen(onHudUpdate, showToast) {
 
         <div class="home-wall-center">
           ${hasHearts ? '<div class="home-hearts-wall">💖 💕 💖</div>' : ''}
+          ${!hasBooks && currentHome.id === 'home_studio' ? renderStudioArtHtml() : ''}
           ${hasBooks ? getBookshelfSvg() : ''}
-          ${hasSofa ? getSofaSvg() : ''}
+          <div style="display:flex; gap:6px; align-items:flex-end; justify-content:center; flex-wrap:wrap;">
+            ${hasDresser ? getAntiqueDresserSvg() : ''}
+            ${hasVinyl ? getBotanicalVinylSvg() : ''}
+            ${hasDesignerLamp ? getDesignerLampSvg() : ''}
+          </div>
         </div>
 
+        ${fireplaceHtml}
+        ${balconyHtml}
         ${hasLamp ? getFloorLampSvg() : ''}
       </div>
 
       <div class="home-walk-stage" id="home-walk-stage">
+        ${hasSofa ? getSofaSvg() : ''}
         ${hasRug ? '<div class="home-rug"></div>' : ''}
         ${hasBed ? getCatBedFloorSvg() : ''}
         ${hasPlant ? getFicusPlantSvg() : ''}
+        ${hasCatTower ? getCatTowerSvg() : ''}
         ${hasPumpkins ? getHomePumpkinsSvg() : ''}
         ${hasTree ? getHomeXmasTreeSvg() : ''}
         ${hasBall ? `
@@ -189,7 +219,7 @@ export function renderHomeScreen(onHudUpdate, showToast) {
         Сон восстановит силы и переведёт время на следующее утро. До оплаты аренды (${gameState.weeklyRent} ₽): <strong>${gameState.daysUntilRent} дн.</strong>
       </p>
       <p class="muted-text" style="font-size:11.5px;">
-        💡 Имя питомца, дата, режим работы и музыка настраиваются в «⚙️ Касса и ИИ» → «Настройки и ИИ».
+        💡 Новые квартиры можно купить в «📱 Телефон» → «🏢 Риелтор», а редкий декор — в «🛋️ Декор».
       </p>
       <button class="btn btn-primary" id="btn-sleep-next-day">
         🛏️ Лечь спать (Новый день)
@@ -356,6 +386,12 @@ function scheduleNextCatWalk(delayMs = 2800) {
       { x: Math.round(22 + Math.random() * 52), label: 'Мягко шагает 🐾' }
     ];
 
+    if (gameState.homeLocationId === 'home_balcony') {
+      targets.push({ x: 88, label: 'Гуляет на балконе 🌿' });
+    } else if (gameState.homeLocationId === 'home_loft') {
+      targets.push({ x: 84, label: 'Греется у камина 🔥' });
+    }
+
     if (hasBall) {
       const targetBallX = Math.max(16, Math.min(82, ballPosPercent));
       targets.push({ x: targetBallX, label: 'Гоняет мячик! 🎾', isBall: true });
@@ -427,7 +463,6 @@ function triggerCatPlayWithBall(petName, onHudUpdate, showToast) {
   catThought = 'Заметила мячик! 🎾';
   if (bubble) bubble.textContent = catThought;
 
-  // Отдельный кадр после фиксации позиции, чтобы браузер гарантированно плавно проиграл весь бег
   catStartMoveTimer = setTimeout(() => {
     const curWalker = document.getElementById('pisklya-walker');
     const curBubble = document.getElementById('cat-thought-bubble');
@@ -759,6 +794,276 @@ function getFloorLampSvg() {
         <ellipse cx="40" cy="44" rx="23" ry="4" fill="#FFF3CF" opacity="0.8"/>
       </svg>
     </div>
+  `;
+}
+
+function renderHomeBackdropDetails(homeId) {
+  if (homeId !== 'home_loft') return '';
+  return `
+    <div class="home-loft-beams">
+      <svg viewBox="0 0 360 22" width="100%" height="22" preserveAspectRatio="none">
+        <path d="M0,12 L105,0 L255,0 L360,12 L360,18 L252,6 L108,6 L0,18 Z" fill="#C79F73"/>
+        <rect x="0" y="0" width="360" height="5" fill="#B58A5E"/>
+        <circle cx="180" cy="11" r="4" fill="#FFE6A3"/>
+      </svg>
+    </div>
+  `;
+}
+
+function renderHomeWindowScenery(homeId, isDay, seasonId) {
+  const leafColor =
+    seasonId === 'winter' ? '#DAE7F0' :
+    seasonId === 'early-spring' ? '#A4CB9C' :
+    seasonId === 'autumn' ? '#E28C4A' : '#79B375';
+  const groundColor =
+    seasonId === 'winter' ? '#EDF4F8' :
+    seasonId === 'autumn' ? '#D6955A' : '#95C18E';
+
+  if (homeId === 'home_loft') {
+    return `
+      <svg class="home-window-svg" viewBox="0 0 124 88" preserveAspectRatio="none">
+        ${isDay ? `
+          <circle cx="96" cy="22" r="10" fill="#FFE68C"/>
+          <ellipse cx="38" cy="24" rx="16" ry="7" fill="rgba(255,255,255,0.85)"/>
+          <ellipse cx="48" cy="22" rx="11" ry="6" fill="rgba(255,255,255,0.9)"/>
+          <path d="M18,36 Q22,32 26,36 Q30,32 34,36" stroke="#6F869C" stroke-width="1.3" fill="none"/>
+        ` : `
+          <circle cx="96" cy="22" r="10" fill="#FFF4C2"/>
+          <circle cx="100" cy="20" r="8" fill="#323D6D"/>
+          <circle cx="24" cy="18" r="1.5" fill="#FFFDF5"/>
+          <circle cx="44" cy="13" r="1.8" fill="#FFE8A3"/>
+          <circle cx="68" cy="24" r="1.4" fill="#FFFDF5"/>
+          <circle cx="32" cy="36" r="1.3" fill="#FFFDF5"/>
+          <circle cx="78" cy="39" r="1.7" fill="#FFE8A3"/>
+          <circle cx="54" cy="33" r="1.2" fill="#FFFDF5"/>
+        `}
+        <polygon points="0,88 0,68 26,56 54,70 54,88" fill="${isDay ? '#D69E86' : '#4E445A'}"/>
+        <polygon points="48,88 48,66 86,54 124,68 124,88" fill="${isDay ? '#E0B298' : '#3F374A'}"/>
+        <rect x="64" y="69" width="6" height="8" rx="1" fill="${isDay ? '#D4EAF7' : '#FFE394'}"/>
+        <rect x="78" y="69" width="6" height="8" rx="1" fill="${isDay ? '#D4EAF7' : '#FFE394'}"/>
+        <rect x="20" y="72" width="6" height="7" rx="1" fill="${isDay ? '#D4EAF7' : '#FFE394'}"/>
+        ${seasonId === 'winter' ? '<path d="M0,68 L26,56 L54,70 L86,54 L124,68" stroke="#F4F9FC" stroke-width="2.5" fill="none"/>' : ''}
+      </svg>
+    `;
+  }
+
+  if (homeId === 'home_balcony') {
+    return `
+      <svg class="home-window-svg" viewBox="0 0 106 82" preserveAspectRatio="none">
+        ${isDay
+          ? '<circle cx="84" cy="18" r="8" fill="#FFE484"/><ellipse cx="32" cy="20" rx="14" ry="6" fill="rgba(255,255,255,0.8)"/>'
+          : '<circle cx="84" cy="18" r="8" fill="#FFF4C4"/><circle cx="26" cy="16" r="1.3" fill="#FFF"/>'}
+        <path d="M0,62 Q35,54 70,60 Q92,56 106,62 L106,82 L0,82 Z" fill="${groundColor}"/>
+        <circle cx="28" cy="48" r="14" fill="${leafColor}"/>
+        <circle cx="76" cy="50" r="12" fill="${leafColor}"/>
+        <rect x="26" y="56" width="4" height="12" fill="#8C6D56"/>
+        <rect x="74" y="56" width="4" height="12" fill="#8C6D56"/>
+      </svg>
+    `;
+  }
+
+  return `
+    <svg class="home-window-svg" viewBox="0 0 106 82" preserveAspectRatio="none">
+      ${isDay ? '<circle cx="84" cy="18" r="8" fill="#FFE382"/>' : '<circle cx="84" cy="18" r="7" fill="#FFF3BF"/>'}
+      <rect x="54" y="42" width="42" height="34" fill="#F2DEC8" stroke="#CBB19A" stroke-width="1"/>
+      <polygon points="50,42 75,26 100,42" fill="#C97E6D"/>
+      <rect x="63" y="49" width="8" height="10" fill="${isDay ? '#BFE2F5' : '#FFE494'}"/>
+      <rect x="79" y="49" width="8" height="10" fill="${isDay ? '#BFE2F5' : '#FFE494'}"/>
+      <rect x="0" y="66" width="106" height="16" fill="${groundColor}"/>
+      <circle cx="24" cy="48" r="14" fill="${leafColor}"/>
+      <rect x="22" y="56" width="4" height="14" fill="#8C6D56"/>
+      <polygon points="10,72 22,72 20,80 12,80" fill="#D9A78B"/>
+      <circle cx="16" cy="68" r="4.5" fill="#7D9E7F"/>
+      <circle cx="16" cy="66" r="2.2" fill="#F29AA4"/>
+    </svg>
+  `;
+}
+
+function renderBalconyDoorHtml(isDay, seasonId) {
+  const isWinter = seasonId === 'winter';
+  const isEarlySpring = seasonId === 'early-spring';
+  const isAutumn = seasonId === 'autumn';
+
+  const floorBg = isWinter
+    ? '#EAF2F7'
+    : isEarlySpring
+    ? '#C9D8C6'
+    : isAutumn
+    ? '#D7A36E'
+    : '#94BF8E';
+
+  const boxPlants = isWinter
+    ? `
+      <circle cx="28" cy="61" r="6" fill="#4E7B52"/>
+      <circle cx="44" cy="59" r="7" fill="#5D8C61"/>
+      <circle cx="60" cy="61" r="6" fill="#4E7B52"/>
+      <path d="M22,58 Q34,53 44,56 Q56,53 66,58" stroke="#F4F9FC" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <circle cx="34" cy="60" r="1.8" fill="#D9534F"/>
+      <circle cx="52" cy="59" r="1.8" fill="#D9534F"/>
+    `
+    : isAutumn
+    ? `
+      <circle cx="28" cy="61" r="6" fill="#D97A3E"/>
+      <circle cx="44" cy="59" r="7" fill="#E6A64C"/>
+      <circle cx="60" cy="61" r="6" fill="#C9653B"/>
+    `
+    : `
+      <circle cx="28" cy="61" r="6" fill="#79B475"/>
+      <circle cx="44" cy="60" r="7" fill="#79B475"/>
+      <circle cx="60" cy="61" r="6" fill="#79B475"/>
+      <circle cx="30" cy="59" r="2.5" fill="#F29AA4"/>
+      <circle cx="45" cy="58" r="2.5" fill="#FFE28A"/>
+      <circle cx="58" cy="59" r="2.5" fill="#F6B8BF"/>
+    `;
+
+  const balconyPot = isWinter
+    ? `
+      <polygon points="56,98 72,98 69,112 59,112" fill="#C98D72"/>
+      <polygon points="64,76 53,97 75,97" fill="#4D7D52"/>
+      <path d="M58,86 Q64,83 70,86" stroke="#F4F9FC" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    `
+    : `
+      <polygon points="56,98 72,98 69,112 59,112" fill="#C98D72"/>
+      <circle cx="64" cy="91" r="9" fill="${isAutumn ? '#D98544' : '#6E9E69'}"/>
+    `;
+
+  const snowFlakes = isWinter
+    ? `
+      <circle cx="16" cy="28" r="1.8" fill="#FFFFFF"/>
+      <circle cx="34" cy="40" r="1.5" fill="#FFFFFF"/>
+      <circle cx="58" cy="30" r="1.8" fill="#FFFFFF"/>
+      <circle cx="74" cy="46" r="1.5" fill="#FFFFFF"/>
+      <circle cx="24" cy="52" r="1.4" fill="#FFFFFF"/>
+    `
+    : '';
+
+  return `
+    <div class="home-balcony-door ${isDay ? '' : 'night'}" title="Панорамный балкон">
+      <svg viewBox="0 0 88 118" width="100%" height="100%">
+        <rect x="0" y="72" width="88" height="46" fill="${floorBg}"/>
+        ${isWinter ? '<path d="M0,74 Q22,69 44,74 Q66,69 88,74 L88,80 L0,80 Z" fill="#FFFFFF"/>' : ''}
+        ${isDay
+          ? '<circle cx="68" cy="18" r="8" fill="#FFE58C"/>'
+          : '<circle cx="68" cy="18" r="7" fill="#FFF3C4"/><circle cx="20" cy="16" r="1.4" fill="#FFF"/><circle cx="38" cy="12" r="1.4" fill="#FFE699"/>'}
+        ${snowFlakes}
+        <path d="M4,8 Q44,20 84,8" stroke="#D9C3B0" stroke-width="1.2" fill="none"/>
+        <circle cx="20" cy="12" r="2.2" fill="#FFE694"/>
+        <circle cx="44" cy="14" r="2.2" fill="#FFE694"/>
+        <circle cx="68" cy="12" r="2.2" fill="#FFE694"/>
+        <line x1="0" y1="74" x2="88" y2="74" stroke="#FFFDF9" stroke-width="4"/>
+        <line x1="16" y1="74" x2="16" y2="118" stroke="#FFFDF9" stroke-width="2.5"/>
+        <line x1="44" y1="0" x2="44" y2="118" stroke="#FFFDF9" stroke-width="3"/>
+        <line x1="72" y1="74" x2="72" y2="118" stroke="#FFFDF9" stroke-width="2.5"/>
+        <rect x="18" y="64" width="52" height="11" rx="2" fill="#D9A78B"/>
+        ${boxPlants}
+        ${balconyPot}
+      </svg>
+    </div>
+  `;
+}
+
+function renderLoftFireplaceHtml() {
+  return `
+    <div class="home-fireplace" style="margin-bottom:-4px;" title="Светлый резной камин">
+      <svg viewBox="0 0 102 98" width="100%" height="100%">
+        <rect x="10" y="24" width="82" height="72" rx="4" fill="#FAF4EC" stroke="#DCC8B4" stroke-width="2"/>
+        <rect x="4" y="18" width="94" height="8" rx="3" fill="#EBD7C2" stroke="#D1B79C" stroke-width="1.5"/>
+        <rect x="16" y="8" width="6" height="10" rx="1" fill="#FFFDF9"/>
+        <ellipse cx="19" cy="5" rx="2" ry="3.5" fill="#FFB945"/>
+        <rect x="26" y="10" width="5" height="8" rx="1" fill="#FCEAE6"/>
+        <ellipse cx="28.5" cy="7" rx="1.8" ry="3" fill="#FFB945"/>
+        <rect x="40" y="6" width="18" height="12" rx="2" fill="#DFB873"/>
+        <rect x="43" y="8" width="12" height="8" fill="#FAF4E8"/>
+        <polygon points="73,10 83,10 81,18 75,18" fill="#C8D9C7"/>
+        <path d="M78,10 Q75,4 72,2 M78,10 Q81,3 84,2" stroke="#6E9971" stroke-width="1.6" fill="none"/>
+        <path d="M26,96 L26,50 Q51,33 76,50 L76,96 Z" fill="#46373B"/>
+        <ellipse cx="51" cy="84" rx="22" ry="8" fill="#6E4E3E"/>
+        <rect x="35" y="81" width="32" height="6" rx="3" fill="#8C5D43"/>
+        <g class="fireplace-flame">
+          <path d="M51,50 Q64,68 56,82 Q51,87 46,82 Q38,68 51,50 Z" fill="#FF8C3B"/>
+          <path d="M51,59 Q59,71 54,81 Q50,84 48,79 Q44,71 51,59 Z" fill="#FFE073"/>
+        </g>
+      </svg>
+    </div>
+  `;
+}
+
+function renderStudioArtHtml() {
+  return `
+    <div class="home-studio-art" title="Ботанический постер">
+      <svg viewBox="0 0 48 36" width="100%" height="100%">
+        <rect x="4" y="3" width="40" height="30" rx="3" fill="#FFFDF9" stroke="#C9A88C" stroke-width="2"/>
+        <path d="M24,27 L24,12 M24,21 L18,17 M24,18 L30,14" stroke="#7D9E7F" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="24" cy="11" r="4" fill="#F29AA4"/>
+      </svg>
+    </div>
+  `;
+}
+
+function getCatTowerSvg() {
+  return `
+    <div class="home-cat-tower-floor" title="Большой кошачий городок до потолка">
+      <svg viewBox="0 0 70 118" width="100%" height="100%">
+        <rect x="10" y="106" width="50" height="8" rx="3" fill="#D5B89B"/>
+        <rect x="18" y="64" width="7" height="42" fill="#E3C8A8"/>
+        <rect x="45" y="36" width="7" height="70" fill="#E3C8A8"/>
+        <rect x="14" y="80" width="26" height="26" rx="4" fill="#F2D7C9" stroke="#D1A694" stroke-width="1.5"/>
+        <circle cx="27" cy="94" r="6.5" fill="#4A3E39"/>
+        <rect x="12" y="58" width="28" height="7" rx="3" fill="#EBD0B9"/>
+        <rect x="30" y="32" width="32" height="7" rx="3" fill="#EBD0B9"/>
+        <ellipse cx="46" cy="16" rx="14" ry="6" fill="#FCEAE6" stroke="#E0A599" stroke-width="1.5"/>
+        <rect x="43" y="18" width="6" height="14" fill="#E3C8A8"/>
+        <circle cx="20" cy="70" r="3" fill="#F29AA4"/>
+        <line x1="20" y1="65" x2="20" y2="68" stroke="#A88C72" stroke-width="1.2"/>
+      </svg>
+    </div>
+  `;
+}
+
+function getDesignerLampSvg() {
+  return `
+    <span class="home-rare-decor-spot" title="Дизайнерский витражный торшер">
+      <svg viewBox="0 0 38 64" width="32" height="54">
+        <rect x="17" y="24" width="4" height="34" fill="#735743"/>
+        <ellipse cx="19" cy="59" rx="10" ry="3" fill="#5E4635"/>
+        <polygon points="9,8 29,8 34,25 4,25" fill="#FCE6B4" stroke="#C98A4B" stroke-width="1.5"/>
+        <polygon points="14,8 24,8 21,25 17,25" fill="#F29AA4" opacity="0.75"/>
+        <polygon points="9,8 14,8 17,25 4,25" fill="#89B9DF" opacity="0.7"/>
+      </svg>
+    </span>
+  `;
+}
+
+function getAntiqueDresserSvg() {
+  return `
+    <span class="home-rare-decor-spot" title="Старинное трюмо с зеркалом">
+      <svg viewBox="0 0 46 60" width="38" height="50">
+        <ellipse cx="23" cy="18" rx="12" ry="15" fill="#C9A36B" stroke="#8F6E3E" stroke-width="1.5"/>
+        <ellipse cx="23" cy="18" rx="9" ry="12" fill="#DCECF5"/>
+        <rect x="7" y="34" width="32" height="20" rx="2" fill="#A97D59" stroke="#7E5B3E" stroke-width="1.5"/>
+        <line x1="10" y1="44" x2="36" y2="44" stroke="#7E5B3E" stroke-width="1.2"/>
+        <circle cx="23" cy="39" r="1.6" fill="#DFB66B"/>
+        <circle cx="23" cy="49" r="1.6" fill="#DFB66B"/>
+        <rect x="9" y="54" width="4" height="5" fill="#7E5B3E"/>
+        <rect x="33" y="54" width="4" height="5" fill="#7E5B3E"/>
+      </svg>
+    </span>
+  `;
+}
+
+function getBotanicalVinylSvg() {
+  return `
+    <span class="home-rare-decor-spot" title="Винтажный проигрыватель дома">
+      <svg viewBox="0 0 48 42" width="40" height="35">
+        <rect x="4" y="16" width="40" height="20" rx="4" fill="#B88B61" stroke="#855E3B" stroke-width="1.5"/>
+        <rect x="8" y="10" width="32" height="8" rx="2" fill="#D5B08B"/>
+        <ellipse cx="22" cy="18" rx="11" ry="3.5" fill="#2B2729"/>
+        <ellipse cx="22" cy="18" rx="3.5" ry="1.2" fill="#E89A94"/>
+        <path d="M35,14 L29,18" stroke="#DFB66B" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="13" cy="26" r="4" fill="#6E4E3E"/>
+        <circle cx="35" cy="26" r="2.2" fill="#DFB66B"/>
+      </svg>
+    </span>
   `;
 }
 

@@ -1,6 +1,6 @@
 import { WEATHERS, getGameDateObj, getSeasonInfo, getWeatherForSeason } from './config.js';
-import { gameState, saveState, addGameMinutes, isShopClosedNow } from './state.js';
-import { generateDirectMessage } from './ai.js';
+import { gameState, saveState, addGameMinutes, isShopClosedNow, getTotalGameMinutes } from './state.js';
+import { generateDirectMessage, generateJobCandidateDm } from './ai.js';
 import {
   renderShopScreen,
   isBouquetMakerOpen,
@@ -147,13 +147,55 @@ function startGameClock() {
       }
     }
 
-    if (!isShopClosedNow()) {
+   if (!isShopClosedNow()) {
       if (!onBouquetTable) {
         checkPreorderArrival(updateHud, showToast);
       }
+      maybeReceiveJobCandidateDm();
       maybeReceiveAutoDirectMessage();
     }
   }, 15000);
+}
+
+/** Автоматический отклик кандидатов на опубликованные вакансии через несколько игровых часов */
+async function maybeReceiveJobCandidateDm() {
+  if (isAutoDmPending) return;
+  const openJobs = (gameState.jobPostings || []).filter((j) => j.status === 'open');
+  if (!openJobs.length) return;
+
+  const totalMin = getTotalGameMinutes();
+  const dueJob = openJobs.find((j) => totalMin >= (j.nextResponseTotalMin || 0) && (j.respondedCount || 0) < 3);
+  if (!dueJob) return;
+
+  isAutoDmPending = true;
+  try {
+    const dm = await generateJobCandidateDm(dueJob);
+    dueJob.respondedCount = (dueJob.respondedCount || 0) + 1;
+    dueJob.nextResponseTotalMin = totalMin + 130 + Math.floor(Math.random() * 110);
+
+    if (dm) {
+      dm.read = false;
+      gameState.directMessages.unshift(dm);
+      saveState();
+      updateHud();
+      playBellSound();
+      showToast(`💼 Отклик на вакансию в Direct от ${dm.jobApplication?.candidateName || dm.senderName}!`);
+
+      const isTypingInPhone =
+        currentNavTab === 'phone' &&
+        document.activeElement &&
+        document.activeElement.tagName === 'INPUT';
+      if (currentNavTab === 'phone' && !isTypingInPhone) {
+        renderPhoneScreen(updateHud, showToast);
+      }
+    } else {
+      saveState();
+    }
+  } catch (err) {
+    console.warn('Не удалось получить отклик кандидата:', err);
+  } finally {
+    isAutoDmPending = false;
+  }
 }
 
 /** Автоматический приход сообщений и предзаказов в Direct по ходу дня */

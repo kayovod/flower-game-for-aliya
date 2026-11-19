@@ -49,9 +49,11 @@ html, body {
 
 /* Верхняя панель статуса */
 .top-bar {
-  height: var(--top-bar-height);
-  padding: 10px 14px;
-  background: rgba(255, 253, 249, 0.92);
+  position: relative;
+  min-height: var(--top-bar-height);
+  height: auto;
+  padding: max(7px, env(safe-area-inset-top)) 10px 7px;
+  background: rgba(255, 253, 249, 0.96);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-soft);
   display: flex;
@@ -59,27 +61,30 @@ html, body {
   justify-content: center;
   gap: 5px;
   flex-shrink: 0;
-  z-index: 20;
+  z-index: 25;
 }
 
 .top-bar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .stat-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 3px;
+  padding: 3px 7px;
   border-radius: 999px;
   background: var(--bg-soft);
-  font-size: 12.5px;
+  font-size: 10.5px;
+  line-height: 1.25;
   font-weight: 700;
   color: var(--text-main);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .stat-pill.money {
@@ -93,15 +98,20 @@ html, body {
 }
 
 .top-date {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.25;
+  font-weight: 800;
+  color: var(--text-main);
+  background: var(--bg-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Основная область экранов */
 .screens-container {
   position: relative;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -131,6 +141,21 @@ html, body {
 .screen::-webkit-scrollbar-thumb {
   background: rgba(140, 123, 115, 0.25);
   border-radius: 999px;
+}
+
+.screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.screen-title {
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-main);
 }
 
 .card-title {
@@ -385,6 +410,7 @@ html, body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
   animation: fadeInScreen 0.2s ease-out;
 }
+
 /* Маскировка пароля/ключа без триггера менеджера паролей Google */
 .masked-input {
   -webkit-text-security: disc;

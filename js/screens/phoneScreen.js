@@ -1,21 +1,30 @@
 import {
   FLOWERS_CATALOG,
+  ACCESSORIES_CATALOG,
   INSTA_HASHTAGS,
   DECOR_CATALOG,
+  SHOP_LOCATIONS,
+  HOME_LOCATIONS,
+  JOB_ROLES,
+  JOB_SCHEDULES,
   getGameDateObj,
   getSeasonInfo,
   getHolidayForDate
 } from '../config.js';
-import { gameState, saveState } from '../state.js';
+import { gameState, saveState, ensureDailyRareDecor, getTotalGameMinutes } from '../state.js';
 import { getSingleFlowerWrappedSvg } from '../graphics/flowersSvg.js';
 import {
   evaluateInstaPost,
   generateInstaCommentReply,
   generateDirectMessage,
   generateDirectFollowUp,
+  generateDirectRejectionReply,
+  generateJobCandidateDm,
+  generateCandidateInterviewReply,
+  generateCandidateHireReaction,
   formatMinutesAsTime
 } from '../ai.js';
-import { playShutterSound, playCoinSound } from '../sound.js';
+import { playShutterSound, playCoinSound, playBellSound } from '../sound.js';
 
 let activeApp = 'insta';
 let selectedPhotoIndex = 0;
@@ -27,6 +36,22 @@ let busyDmId = null;
 let openCommentReplyKey = null;
 let busyCommentKey = null;
 let frostThermalWrap = true;
+let showDmPhotoPicker = false;
+let selectedDmPhotoId = null;
+let showDmRejectMenu = false;
+
+let showJobForm = false;
+let draftJobRoleId = 'assistant';
+let draftJobSalary = 1200;
+let draftJobScheduleId = 'full';
+let draftJobLocationId = '';
+
+const DIRECT_REJECT_TEMPLATES = [
+  'Нет таких цветов',
+  'Не успеем к этому времени',
+  'Слишком маленький бюджет',
+  'Магазин уже закрывается'
+];
 
 const PROMO_CAMPAIGNS = [
   {
@@ -77,7 +102,7 @@ export function renderPhoneScreen(onHudUpdate, showToast) {
       <div class="phone-apps-grid">
         <button class="phone-app-btn ${activeApp === 'insta' ? 'active' : ''}" data-phone-app="insta">
           <span class="phone-app-icon">📸</span>
-          <span>InstaFlower</span>
+          <span>Insta</span>
         </button>
 
         <button class="phone-app-btn ${activeApp === 'direct' ? 'active' : ''}" data-phone-app="direct">
@@ -88,12 +113,17 @@ export function renderPhoneScreen(onHudUpdate, showToast) {
 
         <button class="phone-app-btn ${activeApp === 'wholesale' ? 'active' : ''}" data-phone-app="wholesale">
           <span class="phone-app-icon">🚚</span>
-          <span>Оптовик</span>
+          <span>Опт</span>
         </button>
 
         <button class="phone-app-btn ${activeApp === 'decor' ? 'active' : ''}" data-phone-app="decor">
-          <span class="phone-app-icon">🛋️</span>
+          <span class="phone-app-icon">🏺</span>
           <span>Декор</span>
+        </button>
+
+        <button class="phone-app-btn ${activeApp === 'realtor' ? 'active' : ''}" data-phone-app="realtor">
+          <span class="phone-app-icon">🏢</span>
+          <span>Риелтор</span>
         </button>
       </div>
 
@@ -112,15 +142,71 @@ export function renderPhoneScreen(onHudUpdate, showToast) {
   if (activeApp === 'insta') renderInstaApp(body, onHudUpdate, showToast);
   else if (activeApp === 'direct') renderDirectApp(body, onHudUpdate, showToast);
   else if (activeApp === 'wholesale') renderWholesaleApp(body, onHudUpdate, showToast);
-  else renderDecorApp(body, onHudUpdate, showToast);
+  else if (activeApp === 'decor') renderDecorApp(body, onHudUpdate, showToast);
+  else renderRealtorApp(body, onHudUpdate, showToast);
 }
 
-/* ==================== 1. INSTAFLOWER (ЭТАП 5) ==================== */
+/* ==================== 1. INSTAFLOWER (ПОСТЫ, ПРОМО И ВАКАНСИИ) ==================== */
 function renderInstaApp(body, onHudUpdate, showToast) {
   const photos = gameState.savedPhotos || [];
   if (selectedPhotoIndex >= photos.length) selectedPhotoIndex = 0;
   const currentPhoto = photos[selectedPhotoIndex] || null;
   const handle = escapeHtml(gameState.instaHandle || '@fleur_atelier');
+
+  const ownedShopLocs = SHOP_LOCATIONS.filter((l) =>
+    (gameState.ownedLocations || ['shop_basement']).includes(l.id)
+  );
+  if (!draftJobLocationId || !ownedShopLocs.some((l) => l.id === draftJobLocationId)) {
+    draftJobLocationId = gameState.shopLocationId || ownedShopLocs[0]?.id || 'shop_basement';
+  }
+
+  const openJobsCount = (gameState.jobPostings || []).filter((j) => j.status === 'open').length;
+
+  const jobSectionHtml = showJobForm
+    ? `
+      <div class="job-form-box">
+        <div class="row-between">
+          <strong style="font-size:13px;">📢 Новая вакансия в ленту</strong>
+          <button class="btn btn-soft" id="btn-close-job-form" style="padding:3px 8px; font-size:11px;">✕</button>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="job-role-select">Должность</label>
+          <select class="form-select" id="job-role-select" style="padding:7px 10px; font-size:12.5px;">
+            ${JOB_ROLES.map((r) => `<option value="${r.id}" ${r.id === draftJobRoleId ? 'selected' : ''}>${r.icon} ${r.name}</option>`).join('')}
+          </select>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <div class="form-group">
+            <label class="form-label" for="job-salary-input">Ставка (₽/смена)</label>
+            <input type="number" class="form-input" id="job-salary-input" value="${draftJobSalary}" min="400" step="50" style="padding:7px 10px; font-size:12.5px;" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="job-location-select">Точка</label>
+            <select class="form-select" id="job-location-select" style="padding:7px 10px; font-size:12px;">
+              ${ownedShopLocs.map((l) => `<option value="${l.id}" ${l.id === draftJobLocationId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="job-schedule-select">График работы</label>
+          <select class="form-select" id="job-schedule-select" style="padding:7px 10px; font-size:12px;">
+            ${JOB_SCHEDULES.map((s) => `<option value="${s.id}" ${s.id === draftJobScheduleId ? 'selected' : ''}>${s.label}</option>`).join('')}
+          </select>
+        </div>
+
+        <button class="btn btn-sage" id="btn-publish-job" style="padding:9px 12px; font-size:12.5px;">
+          📢 Опубликовать вакансию
+        </button>
+      </div>
+    `
+    : `
+      <button class="btn btn-sage" id="btn-open-job-form" style="padding:9px 12px; font-size:12.5px;">
+        📢 Подать объявление о работе ${openJobsCount > 0 ? `(активно: ${openJobsCount})` : ''}
+      </button>
+    `;
 
   const activePromo =
     gameState.activePromo && gameState.activePromo.day === gameState.day ? gameState.activePromo : null;
@@ -177,6 +263,8 @@ function renderInstaApp(body, onHudUpdate, showToast) {
     : `<p class="muted-text" style="text-align:center; padding: 12px;">Лента пока пуста. Опубликуй свой первый пост, чтобы набирать подписчиков и приводить гостей из соцсети!</p>`;
 
   body.innerHTML = `
+    ${jobSectionHtml}
+
     ${promoHtml}
 
     <div class="card" style="padding: 12px;">
@@ -201,6 +289,91 @@ function renderInstaApp(body, onHudUpdate, showToast) {
     <div class="card-title" style="padding-left: 4px;">📱 Твоя лента (${gameState.instaPosts.length})</div>
     ${feedHtml}
   `;
+
+  document.getElementById('btn-open-job-form')?.addEventListener('click', () => {
+    showJobForm = true;
+    renderInstaApp(body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-close-job-form')?.addEventListener('click', () => {
+    showJobForm = false;
+    renderInstaApp(body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('job-role-select')?.addEventListener('change', (e) => {
+    draftJobRoleId = e.target.value;
+    const roleMeta = JOB_ROLES.find((r) => r.id === draftJobRoleId);
+    if (roleMeta) draftJobSalary = roleMeta.baseSalary;
+    renderInstaApp(body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('job-salary-input')?.addEventListener('input', (e) => {
+    draftJobSalary = Math.max(400, Number(e.target.value) || 1200);
+  });
+
+  document.getElementById('job-location-select')?.addEventListener('change', (e) => {
+    draftJobLocationId = e.target.value;
+  });
+
+  document.getElementById('job-schedule-select')?.addEventListener('change', (e) => {
+    draftJobScheduleId = e.target.value;
+  });
+
+  document.getElementById('btn-publish-job')?.addEventListener('click', () => {
+    const roleMeta = JOB_ROLES.find((r) => r.id === draftJobRoleId) || JOB_ROLES[0];
+    const locMeta = SHOP_LOCATIONS.find((l) => l.id === draftJobLocationId) || SHOP_LOCATIONS[0];
+    const schedMeta = JOB_SCHEDULES.find((s) => s.id === draftJobScheduleId) || JOB_SCHEDULES[0];
+    const salary = Math.max(400, Number(document.getElementById('job-salary-input')?.value) || roleMeta.baseSalary);
+
+    const jobId = 'job_' + Date.now();
+    const totalNow = getTotalGameMinutes();
+    const delayMins = 80 + Math.floor(Math.random() * 70);
+
+    if (!Array.isArray(gameState.jobPostings)) gameState.jobPostings = [];
+    gameState.jobPostings.unshift({
+      id: jobId,
+      roleId: roleMeta.id,
+      roleName: roleMeta.name,
+      roleIcon: roleMeta.icon,
+      salary,
+      scheduleId: schedMeta.id,
+      scheduleLabel: schedMeta.label,
+      locationId: locMeta.id,
+      locationName: locMeta.name,
+      day: gameState.day,
+      postedTotalMin: totalNow,
+      nextResponseTotalMin: totalNow + delayMins,
+      respondedCount: 0,
+      status: 'open'
+    });
+
+    gameState.instaPosts.unshift({
+      id: 'post_job_' + Date.now(),
+      isJobPost: true,
+      jobId,
+      roleIcon: roleMeta.icon,
+      roleName: roleMeta.name,
+      salary,
+      scheduleLabel: schedMeta.label,
+      locationName: locMeta.name,
+      likes: 6 + Math.floor(Math.random() * 10),
+      followerDelta: 1,
+      verdict: 'Вакансия открыта 📢',
+      hashtags: ['#работа', '#вакансия', '#флористика'],
+      comments: [
+        { author: '@marina_v', text: 'Отправлю знакомой, как раз искала подработку в уютном месте!' },
+        { author: '@artem_life', text: `Отличная ставка (${salary} ₽/см.), удачи с поисками!` }
+      ]
+    });
+
+    gameState.followers += 1;
+    showJobForm = false;
+    playBellSound();
+    saveState();
+    onHudUpdate();
+    showToast('📢 Вакансия опубликована! Отклики придут в Direct через пару игровых часов.');
+    renderInstaApp(body, onHudUpdate, showToast);
+  });
 
   body.querySelectorAll('[data-launch-promo]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -380,6 +553,30 @@ function renderInstaPostCard(post, handle) {
     `
     : '';
 
+  if (post.isJobPost) {
+    const jobObj = (gameState.jobPostings || []).find((j) => j.id === post.jobId);
+    const isClosed = jobObj && jobObj.status !== 'open';
+    return `
+      <div class="insta-job-card">
+        <div class="row-between">
+          <span style="font-size:12px; font-weight:800;">🌸 ${handle}</span>
+          <span class="badge ${isClosed ? 'badge-warn' : 'badge-ok'}">${isClosed ? 'Сотрудник нанят ✓' : 'Вакансия открыта 📢'}</span>
+        </div>
+        <strong style="font-size:14px;">${post.roleIcon || '💼'} Ищем: ${escapeHtml(post.roleName)}</strong>
+        <div class="insta-job-details">
+          <span class="job-detail-pill">💰 ${post.salary} ₽ / смена</span>
+          <span class="job-detail-pill">🏪 ${escapeHtml(post.locationName)}</span>
+          <span class="job-detail-pill">🕒 ${escapeHtml(post.scheduleLabel)}</span>
+        </div>
+        <div class="row-between" style="font-size:12px;">
+          <strong>❤️ ${post.likes || 5}</strong>
+          <span class="muted-text" style="font-size:11px;">Отклики приходят в Direct</span>
+        </div>
+        ${commentsHtml}
+      </div>
+    `;
+  }
+
   return `
     <div class="insta-post-card">
       <div class="insta-post-header">
@@ -437,7 +634,7 @@ async function handleCommentReply(postId, commentIdx, text, body, onHudUpdate, s
   }
 }
 
-/* ==================== 2. DIRECT (ЖИВОЕ ОБЩЕНИЕ И УМНЫЕ ПРЕДЗАКАЗЫ) ==================== */
+/* ==================== 2. DIRECT (КЛИЕНТЫ И СОБЕСЕДОВАНИЯ С КАНДИДАТАМИ) ==================== */
 function renderDirectApp(body, onHudUpdate, showToast) {
   if (openedDmId) {
     const activeDm = gameState.directMessages.find((m) => m.id === openedDmId);
@@ -464,13 +661,30 @@ function renderDirectApp(body, onHudUpdate, showToast) {
     isFetchingDm = true;
     renderDirectApp(body, onHudUpdate, showToast);
     try {
-      const dm = await generateDirectMessage();
-      dm.read = false;
-      gameState.directMessages.unshift(dm);
-      trimDirectMessages();
-      saveState();
-      onHudUpdate();
-      showToast(`Новое сообщение от ${dm.senderName}`);
+      const openJob = (gameState.jobPostings || []).find((j) => j.status === 'open' && (j.respondedCount || 0) < 3);
+      const totalMin = getTotalGameMinutes();
+      const shouldSpawnJob =
+        openJob && (totalMin >= (openJob.nextResponseTotalMin || 0) || Math.random() < 0.65);
+
+      if (shouldSpawnJob) {
+        const dm = await generateJobCandidateDm(openJob);
+        openJob.respondedCount = (openJob.respondedCount || 0) + 1;
+        openJob.nextResponseTotalMin = totalMin + 130 + Math.floor(Math.random() * 110);
+        dm.read = false;
+        gameState.directMessages.unshift(dm);
+        trimDirectMessages();
+        saveState();
+        onHudUpdate();
+        showToast(`💼 Отклик на вакансию от ${dm.jobApplication?.candidateName || dm.senderName}!`);
+      } else {
+        const dm = await generateDirectMessage();
+        dm.read = false;
+        gameState.directMessages.unshift(dm);
+        trimDirectMessages();
+        saveState();
+        onHudUpdate();
+        showToast(`Новое сообщение от ${dm.senderName}`);
+      }
     } finally {
       isFetchingDm = false;
       renderPhoneScreen(onHudUpdate, showToast);
@@ -482,6 +696,9 @@ function renderDirectApp(body, onHudUpdate, showToast) {
       const dm = gameState.directMessages.find((m) => m.id === row.dataset.openDm);
       if (!dm) return;
       openedDmId = dm.id;
+      showDmPhotoPicker = false;
+      selectedDmPhotoId = null;
+      showDmRejectMenu = false;
       if (!dm.read) {
         dm.read = true;
         saveState();
@@ -504,6 +721,18 @@ function renderDmListItem(dm) {
     icon = '⛔';
     statusText = 'Заблокирован';
     statusClass = 'badge-warn';
+  } else if (dm.jobApplication) {
+    icon = dm.jobApplication.roleIcon || '💼';
+    if (dm.jobApplication.status === 'hired') {
+      statusText = 'В команде ✓';
+      statusClass = 'badge-ok';
+    } else if (dm.jobApplication.status === 'rejected') {
+      statusText = 'Отказано';
+      statusClass = 'badge-warn';
+    } else {
+      statusText = 'Собеседование';
+      statusClass = 'badge-ok';
+    }
   } else if (dm.kind === 'review' && !dm.order) {
     icon = '⭐';
     statusText = 'Отзыв';
@@ -543,10 +772,16 @@ function renderDmListItem(dm) {
 }
 
 function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
+  if (dm.jobApplication) {
+    renderJobInterviewChat(dm, body, onHudUpdate, showToast);
+    return;
+  }
+
   const isBusy = busyDmId === dm.id;
   const hasOrder = Boolean(dm.order);
   const flowerName = dm.order?.flowerName || FLOWERS_CATALOG[dm.order?.typeId]?.name || 'цветы';
   const vaseMatch = hasOrder ? gameState.inventory.find((v) => v.typeId === dm.order.typeId && v.qty >= dm.order.qty) : null;
+  const accLine = dm.order?.accessoryName ? ` + 🎁 ${dm.order.accessoryName}` : '';
 
   const threadList = Array.isArray(dm.thread) && dm.thread.length
     ? dm.thread
@@ -556,53 +791,121 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
       ];
 
   const threadHtml = threadList
-    .map((m) => `<div class="dm-msg ${m.sender}">${escapeHtml(m.text)}</div>`)
+    .map((m) => `
+      <div class="dm-msg ${m.sender}">
+        ${m.photoUrl ? `<img class="dm-msg-photo" src="${m.photoUrl}" alt="Фото букета" />` : ''}
+        ${m.text ? `<span>${escapeHtml(m.text)}</span>` : ''}
+      </div>
+    `)
     .join('');
 
   const isBlocked = Boolean(dm.blockedByClient || dm.blockedByPlayer);
   const preObj = hasOrder ? gameState.preorders.find((p) => p.dmId === dm.id && p.status !== 'cancelled') : null;
   const alreadyInShop = preObj && preObj.status === 'in_shop';
+  const canAcceptOrder = hasOrder && !dm.order.done && !dm.order.accepted && !dm.order.rejected && !isBlocked && !alreadyInShop;
+  const canRejectOrder = hasOrder && !dm.order.done && !dm.order.rejected && !isBlocked && !alreadyInShop;
 
   let orderBannerHtml = '';
   if (hasOrder) {
     if (dm.order.done) {
       orderBannerHtml = `
         <div class="dm-order-banner agreed">
-          ✅ <strong>Выполнен:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • клиент забрал заказ.
+          ✅ <strong>Выполнен:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}»${escapeHtml(accLine)} • клиент забрал заказ.
         </div>
       `;
     } else if (dm.order.rejected) {
       orderBannerHtml = `
         <div class="dm-order-banner cancelled">
-          ❌ <strong>Заказ отменён:</strong> клиент предупреждён и не придёт (если передумаешь — напиши в чат).
+          ❌ <strong>Заказ отменён:</strong> клиент предупреждён и не придёт (можно договориться заново в чате).
         </div>
       `;
     } else if (dm.order.accepted) {
       orderBannerHtml = `
         <div class="dm-order-banner agreed">
-          ✅ <strong>Договорились!</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • к ${dm.order.dueTimeLabel} • ${dm.order.reward} ₽
+          ✅ <strong>Принят в работу!</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}»${escapeHtml(accLine)} • к ${dm.order.dueTimeLabel} • ${dm.order.reward} ₽
           ${vaseMatch
             ? `<span style="color:var(--sage-dark); font-weight:800;"> • В наличии ✓</span>`
             : `<span style="color:#9D6F1D; font-weight:800;"> • Докупи к приходу</span>`}
-          <div class="muted-text" style="font-size:10.5px; margin-top:2px;">
-            Если не сможешь выполнить — просто напиши об этом в чат, клиент поймёт и не придёт.
-          </div>
         </div>
       `;
     } else {
       orderBannerHtml = `
         <div class="dm-order-banner">
-          💐 <strong>Запрос клиента:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}» • к ${dm.order.dueTimeLabel} • ~${dm.order.reward} ₽
+          💐 <strong>Запрос клиента:</strong> ${dm.order.qty} шт. «${escapeHtml(flowerName)}»${escapeHtml(accLine)} • к ${dm.order.dueTimeLabel} • ~${dm.order.reward} ₽
           ${vaseMatch
             ? `<span style="color:var(--sage-dark); font-weight:800;"> • В наличии ✓</span>`
             : `<span style="color:#9D6F1D; font-weight:800;"> • Нет в вазах</span>`}
-          <div class="muted-text" style="font-size:10.5px; margin-top:2px;">
-            Ответь в чате своими словами: договоритесь или откажи.
-          </div>
         </div>
       `;
     }
   }
+
+  const savedPhotos = gameState.savedPhotos || [];
+  const attachedPhoto = selectedDmPhotoId ? savedPhotos.find((p) => p.id === selectedDmPhotoId) || null : null;
+
+  const photoPickerHtml = showDmPhotoPicker
+    ? `
+      <div class="dm-photo-picker-box">
+        <div class="row-between">
+          <strong style="font-size:11.5px;">📷 Выбери снимок из галереи Polaroid:</strong>
+          <button class="btn btn-soft" id="btn-dm-close-photos" style="padding:2px 7px; font-size:11px;">✕</button>
+        </div>
+        ${savedPhotos.length
+          ? `<div class="photo-picker-row">
+              ${savedPhotos
+                .map(
+                  (p) => `
+                <div class="photo-pick-item ${p.id === selectedDmPhotoId ? 'selected' : ''}" data-pick-dm-photo="${p.id}" title="${escapeAttr(p.description || 'Снимок')}">
+                  <img src="${p.dataUrl}" alt="Фото" />
+                </div>
+              `
+                )
+                .join('')}
+            </div>`
+          : `<p class="muted-text" style="font-size:11px;">Галерея пуста! Сфоткай букет на Столе сборки (кнопка «📸 Сфотать») или зал в InstaFlower.</p>`}
+      </div>
+    `
+    : '';
+
+  const attachedPreviewHtml = attachedPhoto
+    ? `
+      <div class="dm-attached-preview">
+        <img src="${attachedPhoto.dataUrl}" alt="Вложение" />
+        <div style="flex:1; min-width:0;">
+          <strong>📷 Фото прикреплено</strong>
+          <div class="muted-text" style="font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            ${escapeHtml(attachedPhoto.description || 'Снимок букета')}
+          </div>
+        </div>
+        <button class="btn btn-soft" id="btn-dm-clear-photo" style="padding:3px 7px; font-size:11px;">✕</button>
+      </div>
+    `
+    : '';
+
+  const rejectMenuHtml = showDmRejectMenu && canRejectOrder
+    ? `
+      <div class="reject-box">
+        <div class="row-between">
+          <strong style="font-size:11.5px;">Выбери причину отказа:</strong>
+          <button class="btn btn-soft" id="btn-dm-close-reject" style="padding:2px 7px; font-size:10.5px;">✕</button>
+        </div>
+        <div class="reject-chips">
+          ${DIRECT_REJECT_TEMPLATES.map((tpl) => `
+            <button class="reject-chip" data-dm-reject-tpl="${escapeAttr(tpl)}" ${isBusy ? 'disabled' : ''}>
+              ${escapeHtml(tpl)}
+            </button>
+          `).join('')}
+        </div>
+        <div style="display:flex; gap:5px;">
+          <input type="text" class="form-input" id="dm-reject-custom-input" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Своя причина..." style="padding:6px 8px; font-size:11.5px;" ${isBusy ? 'disabled' : ''} />
+          <button class="btn btn-danger" id="btn-dm-reject-custom" style="padding:6px 9px; font-size:11.5px;" ${isBusy ? 'disabled' : ''}>Отказать</button>
+        </div>
+        <button class="btn btn-soft" id="btn-dm-reject-silent" style="padding:6px 8px; font-size:11px;" ${isBusy ? 'disabled' : ''}>
+          🔇 Молчаливый отказ («К сожалению, не сможем взять заказ»)
+        </button>
+      </div>
+    `
+    : '';
 
   body.innerHTML = `
     <div class="dm-chat-topbar">
@@ -620,12 +923,29 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
     </div>
 
     <div class="dm-card">
-      <div class="dm-thread" style="max-height: 250px; overflow-y: auto;">
+      <div class="dm-thread" style="max-height: 245px; overflow-y: auto;">
         ${threadHtml}
         ${isBusy ? `<div class="dm-msg system">💬 ${escapeHtml(dm.senderName)} печатает...</div>` : ''}
       </div>
 
       ${orderBannerHtml}
+
+      ${(canAcceptOrder || canRejectOrder) ? `
+        <div class="dm-order-actions">
+          ${canAcceptOrder ? `
+            <button class="btn btn-sage" id="btn-dm-accept-order" ${isBusy ? 'disabled' : ''}>
+              ✅ Принять заказ
+            </button>
+          ` : ''}
+          ${canRejectOrder ? `
+            <button class="btn btn-danger" id="btn-dm-toggle-reject" ${isBusy ? 'disabled' : ''}>
+              ${dm.order.accepted ? '🚫 Отменить заказ' : '🚫 Отказать'}
+            </button>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      ${rejectMenuHtml}
 
       ${dm.blockedByClient ? `
         <div class="dm-blocked-banner">⛔ Пользователь заблокировал вас из-за грубого общения. Переписка закрыта.</div>
@@ -634,9 +954,20 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
       ` : alreadyInShop ? `
         <span class="badge badge-warn" style="align-self:flex-start;">🔔 Клиент уже в зале забирает заказ! Перейди в «Магазин».</span>
       ` : !(hasOrder && dm.order.done) ? `
-        <div class="row-between" style="gap: 6px;">
-          <input type="text" class="form-input" id="dm-reply-${dm.id}" data-dm-reply-input="${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Напиши клиенту в Direct..." style="padding: 7px 10px; font-size: 12.5px;" ${isBusy ? 'disabled' : ''} />
-          <button class="btn btn-primary" data-reply-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding: 8px 12px; font-size: 12.5px;">➤</button>
+        ${photoPickerHtml}
+        ${attachedPreviewHtml}
+        <div class="row-between" style="gap: 5px;">
+          <button
+            class="btn ${showDmPhotoPicker || attachedPhoto ? 'btn-primary' : 'btn-soft'}"
+            id="btn-dm-photo-toggle"
+            title="Прикрепить фото"
+            style="padding: 7px 9px; font-size: 13px; flex-shrink: 0;"
+            ${isBusy ? 'disabled' : ''}
+          >
+            📷
+          </button>
+          <input type="text" class="form-input" id="dm-reply-${dm.id}" data-dm-reply-input="${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Напиши клиенту в Direct..." style="padding: 7px 10px; font-size: 12.5px; flex:1; min-width:0;" ${isBusy ? 'disabled' : ''} />
+          <button class="btn btn-primary" data-reply-dm="${dm.id}" ${isBusy ? 'disabled' : ''} style="padding: 8px 12px; font-size: 12.5px; flex-shrink:0;">➤</button>
         </div>
       ` : ''}
     </div>
@@ -647,6 +978,9 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
 
   document.getElementById('btn-dm-back')?.addEventListener('click', () => {
     openedDmId = null;
+    showDmPhotoPicker = false;
+    selectedDmPhotoId = null;
+    showDmRejectMenu = false;
     renderPhoneScreen(onHudUpdate, showToast);
   });
 
@@ -674,27 +1008,322 @@ function renderOpenedDmChat(dm, body, onHudUpdate, showToast) {
     renderPhoneScreen(onHudUpdate, showToast);
   });
 
+  document.getElementById('btn-dm-photo-toggle')?.addEventListener('click', () => {
+    showDmPhotoPicker = !showDmPhotoPicker;
+    renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-dm-close-photos')?.addEventListener('click', () => {
+    showDmPhotoPicker = false;
+    renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+  });
+
+  body.querySelectorAll('[data-pick-dm-photo]').forEach((el) => {
+    el.addEventListener('click', () => {
+      selectedDmPhotoId = el.dataset.pickDmPhoto;
+      showDmPhotoPicker = false;
+      renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+    });
+  });
+
+  document.getElementById('btn-dm-clear-photo')?.addEventListener('click', () => {
+    selectedDmPhotoId = null;
+    renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-dm-accept-order')?.addEventListener('click', () => {
+    handleDirectAcceptOrder(dm.id, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-dm-toggle-reject')?.addEventListener('click', () => {
+    showDmRejectMenu = !showDmRejectMenu;
+    renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-dm-close-reject')?.addEventListener('click', () => {
+    showDmRejectMenu = false;
+    renderOpenedDmChat(dm, body, onHudUpdate, showToast);
+  });
+
+  body.querySelectorAll('[data-dm-reject-tpl]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      handleDirectRejectOrder(dm.id, btn.dataset.dmRejectTpl, false, body, onHudUpdate, showToast);
+    });
+  });
+
+  document.getElementById('btn-dm-reject-custom')?.addEventListener('click', () => {
+    const reason = document.getElementById('dm-reject-custom-input')?.value.trim();
+    if (!reason) {
+      showToast('Напиши причину или выбери готовый вариант');
+      return;
+    }
+    handleDirectRejectOrder(dm.id, reason, false, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-dm-reject-silent')?.addEventListener('click', () => {
+    handleDirectRejectOrder(dm.id, 'К сожалению, не сможем взять заказ', true, body, onHudUpdate, showToast);
+  });
+
   body.querySelectorAll('[data-reply-dm]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const input = document.getElementById(`dm-reply-${dm.id}`);
-      const text = input?.value.trim();
-      if (text) handleDirectReply(dm.id, text, body, onHudUpdate, showToast);
+      const text = input?.value.trim() || '';
+      const photo = selectedDmPhotoId ? (gameState.savedPhotos || []).find((p) => p.id === selectedDmPhotoId) || null : null;
+      if (!text && !photo) return;
+      handleDirectReply(dm.id, text, body, onHudUpdate, showToast, photo);
     });
   });
 
   body.querySelectorAll('[data-dm-reply-input]').forEach((input) => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !busyDmId) {
-        const text = input.value.trim();
-        if (text) handleDirectReply(dm.id, text, body, onHudUpdate, showToast);
+        const text = input.value.trim() || '';
+        const photo = selectedDmPhotoId ? (gameState.savedPhotos || []).find((p) => p.id === selectedDmPhotoId) || null : null;
+        if (!text && !photo) return;
+        handleDirectReply(dm.id, text, body, onHudUpdate, showToast, photo);
       }
     });
   });
 }
 
+function renderJobInterviewChat(dm, body, onHudUpdate, showToast) {
+  const app = dm.jobApplication;
+  const isBusy = busyDmId === dm.id;
+  const isFinished = app.status === 'hired' || app.status === 'rejected' || dm.blockedByClient;
+
+  const threadList = Array.isArray(dm.thread) && dm.thread.length
+    ? dm.thread
+    : [{ sender: 'client', text: dm.text }];
+
+  const threadHtml = threadList
+    .map((m) => `
+      <div class="dm-msg ${m.sender}">
+        <span>${escapeHtml(m.text)}</span>
+      </div>
+    `)
+    .join('');
+
+  let bannerClass = '';
+  let statusBadge = `<span class="badge badge-ok">Собеседование</span>`;
+  if (app.status === 'hired') {
+    bannerClass = 'hired';
+    statusBadge = `<span class="badge badge-ok">В команде ✓</span>`;
+  } else if (app.status === 'rejected' || dm.blockedByClient) {
+    bannerClass = 'rejected';
+    statusBadge = `<span class="badge badge-warn">Отказ</span>`;
+  }
+
+  const lowerBargain = Math.max(450, Math.round((app.agreedSalary - 150) / 50) * 50);
+  const quickQuestions = [
+    'Расскажите о своём опыте',
+    'Подойдёт этот график?',
+    app.roleId === 'courier' ? 'Есть свой транспорт?' : 'Умеете ухаживать за цветами?',
+    `Договоримся за ${lowerBargain} ₽/см.?`
+  ];
+
+  body.innerHTML = `
+    <div class="dm-chat-topbar">
+      <button class="btn btn-soft" id="btn-dm-back" style="padding:5px 9px; font-size:11.5px;">← Чаты</button>
+      <div style="flex:1; min-width:0; text-align:center;">
+        <strong style="font-size:13px;">${app.roleIcon || '💼'} ${escapeHtml(app.candidateName)}, ${app.age}</strong>
+      </div>
+      ${statusBadge}
+    </div>
+
+    <div class="dm-card">
+      <div class="candidate-banner ${bannerClass}">
+        <div class="row-between">
+          <strong>${escapeHtml(app.roleName)} • ${escapeHtml(app.locationName)}</strong>
+          <strong>${app.agreedSalary} ₽/см.</strong>
+        </div>
+        <div class="muted-text" style="font-size:11px;">${escapeHtml(app.bio)}</div>
+        <div class="muted-text" style="font-size:10.5px;">🕒 ${escapeHtml(app.scheduleLabel)}${app.hasCar ? ' • 🚗 Своё авто' : ''}</div>
+      </div>
+
+      <div class="dm-thread" style="max-height: 225px; overflow-y: auto;">
+        ${threadHtml}
+        ${isBusy ? `<div class="dm-msg system">💬 ${escapeHtml(app.candidateName)} печатает...</div>` : ''}
+      </div>
+
+      ${!isFinished ? `
+        <div class="interview-chips">
+          ${quickQuestions.map((q) => `
+            <button class="interview-chip" data-interview-q="${escapeAttr(q)}" ${isBusy ? 'disabled' : ''}>
+              ${escapeHtml(q)}
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="dm-order-actions">
+          <button class="btn btn-sage" id="btn-hire-candidate" ${isBusy ? 'disabled' : ''}>
+            🤝 Принять на работу (${app.agreedSalary} ₽)
+          </button>
+          <button class="btn btn-danger" id="btn-reject-candidate" ${isBusy ? 'disabled' : ''}>
+            🚫 Отказать
+          </button>
+        </div>
+
+        <div class="row-between" style="gap: 5px;">
+          <input type="text" class="form-input" id="dm-reply-${dm.id}" data-job-reply-input="${dm.id}" autocomplete="off" data-form-type="other" data-lpignore="true" placeholder="Задай вопрос или поторгуйся по ставке..." style="padding: 7px 10px; font-size: 12px; flex:1; min-width:0;" ${isBusy ? 'disabled' : ''} />
+          <button class="btn btn-primary" id="btn-send-job-reply" ${isBusy ? 'disabled' : ''} style="padding: 8px 12px; font-size: 12.5px; flex-shrink:0;">➤</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  const threadEl = body.querySelector('.dm-thread');
+  if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
+
+  document.getElementById('btn-dm-back')?.addEventListener('click', () => {
+    openedDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  });
+
+  body.querySelectorAll('[data-interview-q]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (isBusy) return;
+      handleInterviewMessage(dm.id, btn.dataset.interviewQ, body, onHudUpdate, showToast);
+    });
+  });
+
+  document.getElementById('btn-send-job-reply')?.addEventListener('click', () => {
+    const input = document.getElementById(`dm-reply-${dm.id}`);
+    const text = input?.value.trim();
+    if (text && !isBusy) handleInterviewMessage(dm.id, text, body, onHudUpdate, showToast);
+  });
+
+  document.querySelector(`[data-job-reply-input="${dm.id}"]`)?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !isBusy) {
+      const text = e.currentTarget.value.trim();
+      if (text) handleInterviewMessage(dm.id, text, body, onHudUpdate, showToast);
+    }
+  });
+
+  document.getElementById('btn-hire-candidate')?.addEventListener('click', () => {
+    handleHireCandidate(dm.id, body, onHudUpdate, showToast);
+  });
+
+  document.getElementById('btn-reject-candidate')?.addEventListener('click', () => {
+    handleRejectCandidate(dm.id, body, onHudUpdate, showToast);
+  });
+}
+
+async function handleInterviewMessage(dmId, text, body, onHudUpdate, showToast) {
+  const dm = gameState.directMessages.find((m) => m.id === dmId);
+  if (!dm || !dm.jobApplication || busyDmId) return;
+
+  if (!Array.isArray(dm.thread)) dm.thread = [{ sender: 'client', text: dm.text }];
+  dm.thread.push({ sender: 'player', text });
+  dm.read = true;
+  busyDmId = dmId;
+  renderJobInterviewChat(dm, body, onHudUpdate, showToast);
+
+  try {
+    const res = await generateCandidateInterviewReply(dm, text);
+    dm.thread.push({ sender: 'client', text: res.reply });
+    dm.jobApplication.agreedSalary = res.agreedSalary;
+    if (res.blockedByClient) {
+      dm.blockedByClient = true;
+      dm.jobApplication.status = 'rejected';
+      showToast(`⛔ ${dm.jobApplication.candidateName} ушёл со собеседования!`);
+    }
+    saveState();
+  } finally {
+    busyDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  }
+}
+
+async function handleHireCandidate(dmId, body, onHudUpdate, showToast) {
+  const dm = gameState.directMessages.find((m) => m.id === dmId);
+  const app = dm?.jobApplication;
+  if (!dm || !app || busyDmId || app.status !== 'interviewing') return;
+
+  busyDmId = dmId;
+  app.status = 'hired';
+  const finalSalary = Number(app.agreedSalary) || Number(app.offeredSalary) || 1200;
+
+  if (!Array.isArray(gameState.employees)) gameState.employees = [];
+  gameState.employees.push({
+    id: 'emp_' + Date.now(),
+    candidateId: app.candidateId,
+    name: app.candidateName,
+    nick: app.nick,
+    age: app.age,
+    gender: app.gender,
+    roleId: app.roleId,
+    roleName: app.roleName,
+    roleIcon: app.roleIcon,
+    salary: finalSalary,
+    scheduleId: app.scheduleId,
+    scheduleLabel: app.scheduleLabel,
+    locationId: app.locationId,
+    locationName: app.locationName,
+    hasCar: Boolean(app.hasCar),
+    hiredDay: gameState.day,
+    mood: 90
+  });
+
+  const jobObj = (gameState.jobPostings || []).find((j) => j.id === app.jobId);
+  if (jobObj) jobObj.status = 'filled';
+
+  if (!Array.isArray(dm.thread)) dm.thread = [{ sender: 'client', text: dm.text }];
+  dm.thread.push({
+    sender: 'player',
+    text: `🤝 Добро пожаловать в команду! Договорились: «${app.roleName}» в «${app.locationName}» за ${finalSalary} ₽/смену.`
+  });
+
+  renderJobInterviewChat(dm, body, onHudUpdate, showToast);
+
+  try {
+    const reply = await generateCandidateHireReaction(dm, true, finalSalary);
+    dm.thread.push({ sender: 'client', text: reply });
+    dm.thread.push({
+      sender: 'system',
+      text: `✅ ${app.candidateName} принят${app.gender === 'female' ? 'а' : ''} на работу (${finalSalary} ₽/см.)!`
+    });
+    gameState.mood = Math.min(100, gameState.mood + 4);
+    playCoinSound();
+    saveState();
+    onHudUpdate();
+    showToast(`🤝 ${app.candidateName} теперь в вашей команде!`);
+  } finally {
+    busyDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  }
+}
+
+async function handleRejectCandidate(dmId, body, onHudUpdate, showToast) {
+  const dm = gameState.directMessages.find((m) => m.id === dmId);
+  const app = dm?.jobApplication;
+  if (!dm || !app || busyDmId || app.status !== 'interviewing') return;
+
+  busyDmId = dmId;
+  app.status = 'rejected';
+  if (!Array.isArray(dm.thread)) dm.thread = [{ sender: 'client', text: dm.text }];
+  dm.thread.push({
+    sender: 'player',
+    text: 'Спасибо за отклик! К сожалению, пока мы не готовы сделать вам предложение о работе.'
+  });
+
+  renderJobInterviewChat(dm, body, onHudUpdate, showToast);
+
+  try {
+    const reply = await generateCandidateHireReaction(dm, false, app.agreedSalary);
+    dm.thread.push({ sender: 'client', text: reply });
+    dm.thread.push({ sender: 'system', text: '❌ Кандидат отклонён.' });
+    saveState();
+    showToast(`Собеседование с ${app.candidateName} завершено`);
+  } finally {
+    busyDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  }
+}
+
 function syncAgreedPreorder(dm, orderData) {
   dm.kind = 'preorder';
   dm.order = {
+    ...dm.order,
     ...orderData,
     accepted: true,
     rejected: false,
@@ -712,6 +1341,8 @@ function syncAgreedPreorder(dm, orderData) {
     existing.reward = orderData.reward;
     existing.dueMinutes = orderData.dueMinutes;
     existing.dueTimeLabel = orderData.dueTimeLabel;
+    existing.accessoryId = orderData.accessoryId || null;
+    existing.accessoryName = orderData.accessoryName || null;
   } else {
     gameState.preorders.push({
       id: 'pre_' + dm.id + '_' + Date.now(),
@@ -723,13 +1354,99 @@ function syncAgreedPreorder(dm, orderData) {
       reward: orderData.reward,
       dueMinutes: orderData.dueMinutes,
       dueTimeLabel: orderData.dueTimeLabel,
+      accessoryId: orderData.accessoryId || null,
+      accessoryName: orderData.accessoryName || null,
       day: gameState.day,
       status: 'waiting'
     });
   }
 }
 
-async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
+async function handleDirectAcceptOrder(dmId, body, onHudUpdate, showToast) {
+  const dm = gameState.directMessages.find((m) => m.id === dmId);
+  if (!dm || !dm.order || busyDmId || dm.blockedByClient || dm.blockedByPlayer) return;
+
+  showDmRejectMenu = false;
+  if (!Array.isArray(dm.thread)) {
+    dm.thread = [{ sender: 'client', text: dm.text }];
+  }
+
+  syncAgreedPreorder(dm, dm.order);
+  const accPart = dm.order.accessoryName ? ` и «${dm.order.accessoryName}»` : '';
+  const playerMsg = `✅ Приняли ваш заказ! Подготовим ${dm.order.qty} шт. «${dm.order.flowerName}»${accPart} к ${dm.order.dueTimeLabel}. Ждём вас! 🌸`;
+  dm.thread.push({ sender: 'player', text: playerMsg });
+  dm.thread.push({
+    sender: 'system',
+    text: `✅ Предзаказ подтверждён: визит к ${dm.order.dueTimeLabel} (${dm.order.reward} ₽).`
+  });
+  dm.read = true;
+  busyDmId = dmId;
+
+  renderDirectApp(body, onHudUpdate, showToast);
+
+  try {
+    const res = await generateDirectFollowUp(dm, playerMsg, null);
+    dm.thread.push({ sender: 'client', text: res.reply });
+    gameState.mood = Math.min(100, gameState.mood + 2);
+    saveState();
+    onHudUpdate();
+    showToast(`🤝 Предзаказ от ${dm.senderName} принят на ${dm.order.dueTimeLabel}!`);
+  } finally {
+    busyDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  }
+}
+
+async function handleDirectRejectOrder(dmId, reason, isSilent, body, onHudUpdate, showToast) {
+  const dm = gameState.directMessages.find((m) => m.id === dmId);
+  if (!dm || !dm.order || busyDmId || dm.blockedByClient || dm.blockedByPlayer) return;
+
+  showDmRejectMenu = false;
+  if (!Array.isArray(dm.thread)) {
+    dm.thread = [{ sender: 'client', text: dm.text }];
+  }
+
+  const playerMsg = isSilent
+    ? 'К сожалению, не сможем взять заказ.'
+    : `К сожалению, не сможем взять заказ (${reason}).`;
+
+  dm.thread.push({ sender: 'player', text: playerMsg });
+  dm.order.accepted = false;
+  dm.order.rejected = true;
+  gameState.preorders = gameState.preorders.filter((p) => !(p.dmId === dm.id && p.status !== 'done'));
+  dm.read = true;
+  busyDmId = dmId;
+
+  renderDirectApp(body, onHudUpdate, showToast);
+
+  try {
+    const res = await generateDirectRejectionReply(dm, reason, isSilent);
+    dm.thread.push({ sender: 'client', text: res.reply });
+
+    if (res.raisedBudgetAmount > 0 && dm.order && !dm.order.budgetRaisedOnce) {
+      dm.order.budgetRaisedOnce = true;
+      dm.order.reward = Number(dm.order.reward || 500) + res.raisedBudgetAmount;
+      dm.order.rejected = false;
+      dm.thread.push({
+        sender: 'system',
+        text: `💡 Клиент один раз поднял бюджет на +${res.raisedBudgetAmount} ₽ (теперь: ${dm.order.reward} ₽).`
+      });
+      showToast(`💬 ${dm.senderName} предложил(а) доплатить до ${dm.order.reward} ₽!`);
+    } else {
+      dm.thread.push({ sender: 'system', text: '❌ Заказ отклонён.' });
+      showToast(`❌ Заказ от ${dm.senderName} отклонён`);
+    }
+
+    gameState.mood = Math.max(10, Math.min(100, gameState.mood + (res.moodDelta || 0)));
+    saveState();
+    onHudUpdate();
+  } finally {
+    busyDmId = null;
+    renderPhoneScreen(onHudUpdate, showToast);
+  }
+}
+
+async function handleDirectReply(dmId, text, body, onHudUpdate, showToast, attachedPhoto = null) {
   const dm = gameState.directMessages.find((m) => m.id === dmId);
   if (!dm || busyDmId || dm.blockedByClient || dm.blockedByPlayer) return;
   if (dm.order && dm.order.done) return;
@@ -737,19 +1454,26 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
   if (!Array.isArray(dm.thread)) {
     dm.thread = [{ sender: 'client', text: dm.text }];
   }
-  dm.thread.push({ sender: 'player', text });
-  dm.replyText = text;
+
+  const cleanText = String(text || '').trim();
+  dm.thread.push({
+    sender: 'player',
+    text: cleanText,
+    photoUrl: attachedPhoto ? attachedPhoto.dataUrl : undefined,
+    photoDesc: attachedPhoto ? attachedPhoto.description : undefined
+  });
+
+  if (cleanText) dm.replyText = cleanText;
   dm.read = true;
   busyDmId = dmId;
-
-  const wasAccepted = Boolean(dm.order && dm.order.accepted);
-  const prevTimeLabel = dm.order?.dueTimeLabel || '';
-  const prevTypeId = dm.order?.typeId || '';
+  selectedDmPhotoId = null;
+  showDmPhotoPicker = false;
+  showDmRejectMenu = false;
 
   renderDirectApp(body, onHudUpdate, showToast);
 
   try {
-    const res = await generateDirectFollowUp(dm, text);
+    const res = await generateDirectFollowUp(dm, cleanText, attachedPhoto);
     dm.thread.push({ sender: 'client', text: res.reply });
 
     if (res.blockedByClient) {
@@ -762,41 +1486,15 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
       gameState.followers = Math.max(0, gameState.followers - 1);
       gameState.mood = Math.max(10, gameState.mood - 5);
       showToast(`⛔ ${dm.senderName} заблокировал(а) вас за грубость!`);
-    } else if (res.dealDecision === 'cancelled') {
-      if (dm.order) {
-        dm.order.accepted = false;
-        dm.order.rejected = true;
-      }
-      gameState.preorders = gameState.preorders.filter((p) => !(p.dmId === dm.id && p.status !== 'done'));
-      if (wasAccepted || dm.order) {
-        dm.thread.push({ sender: 'system', text: '❌ Договорённость отменена — клиент не придёт в зал.' });
-        showToast(`❌ Заказ от ${dm.senderName} отменён`);
-      } else {
-        showToast(`💬 ${dm.senderName} ответил(а) в Direct`);
-      }
-      gameState.mood = Math.max(10, gameState.mood + (res.moodDelta || 0));
-    } else if (res.dealDecision === 'agreed' && res.orderData) {
-      syncAgreedPreorder(dm, res.orderData);
-      const changedDetails = wasAccepted && (prevTimeLabel !== res.orderData.dueTimeLabel || prevTypeId !== res.orderData.typeId);
-      if (!wasAccepted || changedDetails) {
-        dm.thread.push({
-          sender: 'system',
-          text: `✅ Договорились! Клиент придёт к ${res.orderData.dueTimeLabel} за ${res.orderData.qty} шт. «${res.orderData.flowerName}».`
-        });
-        showToast(`🤝 Договорились с ${dm.senderName} на ${res.orderData.dueTimeLabel}!`);
-      } else {
-        showToast(`💬 ${dm.senderName} подтвердил(а) визит к ${res.orderData.dueTimeLabel}`);
-      }
-    } else if (res.dealDecision === 'proposed' && res.orderData) {
+    } else if (!dm.order && res.proposedOrder) {
       dm.kind = 'preorder';
       dm.order = {
-        ...res.orderData,
+        ...res.proposedOrder,
         accepted: false,
         rejected: false,
         done: false
       };
-      gameState.preorders = gameState.preorders.filter((p) => !(p.dmId === dm.id && p.status !== 'done'));
-      showToast(`💐 ${dm.senderName} предлагает предзаказ — ответь в чате!`);
+      showToast(`💐 ${dm.senderName} просит предзаказ — прими или откажи в чате!`);
     } else {
       showToast(`💬 ${dm.senderName} ответил(а) в Direct`);
     }
@@ -804,7 +1502,7 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
     if (!res.blockedByClient && !dm.rewardedFollowUp) {
       dm.rewardedFollowUp = true;
       gameState.mood = Math.max(0, Math.min(100, gameState.mood + (res.moodDelta || 2)));
-      if (text.length >= 6 && res.followerDelta > 0) {
+      if ((cleanText.length >= 6 || attachedPhoto) && res.followerDelta > 0) {
         gameState.followers += res.followerDelta;
       }
     }
@@ -818,15 +1516,21 @@ async function handleDirectReply(dmId, text, body, onHudUpdate, showToast) {
 }
 
 function trimDirectMessages() {
-  if (gameState.directMessages.length <= 12) return;
+  if (gameState.directMessages.length <= 14) return;
   const keepImportant = gameState.directMessages.filter(
-    (m) => !m.read || (m.order && m.order.accepted && !m.order.done)
+    (m) =>
+      !m.read ||
+      (m.order && m.order.accepted && !m.order.done) ||
+      (m.jobApplication && m.jobApplication.status === 'interviewing')
   );
   const others = gameState.directMessages.filter(
-    (m) => m.read && !(m.order && m.order.accepted && !m.order.done)
+    (m) =>
+      m.read &&
+      !(m.order && m.order.accepted && !m.order.done) &&
+      !(m.jobApplication && m.jobApplication.status === 'interviewing')
   );
   const combined = [...keepImportant, ...others];
-  gameState.directMessages = combined.slice(0, Math.max(12, keepImportant.length));
+  gameState.directMessages = combined.slice(0, Math.max(14, keepImportant.length));
 }
 
 /* ==================== 3. ОПТОВЫЙ ПОСТАВЩИК ==================== */
@@ -890,6 +1594,33 @@ function renderWholesaleApp(body, onHudUpdate, showToast) {
     })
     .join('');
 
+  const accessoriesHtml = Object.values(ACCESSORIES_CATALOG)
+    .map((acc) => {
+      const owned = (gameState.accessoriesInventory || []).find((a) => a.id === acc.id)?.qty || 0;
+      const cost1 = acc.wholesalePrice;
+      const cost3 = Math.round(acc.wholesalePrice * 3 * 0.92);
+      return `
+      <div class="wholesale-row">
+        <div style="width:42px; height:42px; border-radius:10px; background:var(--bg-soft); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;">
+          ${acc.icon}
+        </div>
+        <div style="flex:1; min-width:0;">
+          <strong style="font-size:12.5px;">${acc.name}</strong>
+          <p class="muted-text" style="font-size:11px;">Розница: ${acc.price} ₽ • На полке: ${owned} шт.</p>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <button class="btn btn-soft" data-buy-acc="${acc.id}:1" style="padding:5px 8px; font-size:11px;">
+            +1 шт (${cost1}₽)
+          </button>
+          <button class="btn btn-sage" data-buy-acc="${acc.id}:3" style="padding:5px 8px; font-size:11px;">
+            +3 шт (${cost3}₽)
+          </button>
+        </div>
+      </div>
+    `;
+    })
+    .join('');
+
   const catalogHtml = Object.values(FLOWERS_CATALOG)
     .map((f) => {
       const price5 = f.wholesalePrice * 5 * priceMult + thermalFee;
@@ -924,6 +1655,8 @@ function renderWholesaleApp(body, onHudUpdate, showToast) {
     ` : ''}
 
     ${dealsHtml}
+    <div class="card-title" style="padding-left:4px;">🎁 Сопутствующие товары (шарики, игрушки, конфеты)</div>
+    ${accessoriesHtml}
     <div class="card-title" style="padding-left:4px;">📦 Обычный прайс поставщика</div>
     ${catalogHtml}
   `;
@@ -945,6 +1678,35 @@ function renderWholesaleApp(body, onHudUpdate, showToast) {
       const actualFresh = isFrost && !frostThermalWrap && Math.random() < 0.5 ? Math.max(25, deal.freshness - 25) : deal.freshness;
       deal.bought = true;
       buyFlowersBatch(deal.typeId, deal.qty, actualFresh, cost, onHudUpdate, showToast);
+      renderWholesaleApp(body, onHudUpdate, showToast);
+    });
+  });
+
+  body.querySelectorAll('[data-buy-acc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const [accId, qtyStr] = btn.dataset.buyAcc.split(':');
+      const qty = Number(qtyStr);
+      const acc = ACCESSORIES_CATALOG[accId];
+      if (!acc) return;
+      const cost = qty === 3 ? Math.round(acc.wholesalePrice * 3 * 0.92) : acc.wholesalePrice;
+      if (gameState.money < cost) {
+        showToast('Недостаточно денег на счёте!');
+        return;
+      }
+
+      gameState.money -= cost;
+      gameState.totalSpent += cost;
+      if (!Array.isArray(gameState.accessoriesInventory)) gameState.accessoriesInventory = [];
+      const existing = gameState.accessoriesInventory.find((a) => a.id === accId);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        gameState.accessoriesInventory.push({ id: accId, qty });
+      }
+      playCoinSound();
+      saveState();
+      onHudUpdate();
+      showToast(`🎁 Доставлено: ${acc.icon} ${acc.shortName} (+${qty} шт.)`);
       renderWholesaleApp(body, onHudUpdate, showToast);
     });
   });
@@ -998,37 +1760,28 @@ function buyFlowersBatch(typeId, qty, freshness, cost, onHudUpdate, showToast) {
   showToast(`🚚 Доставлено: ${FLOWERS_CATALOG[typeId].shortName} (+${qty} шт.)`);
 }
 
-/* ==================== 4. HOME & DECO ==================== */
+/* ==================== 4. ДЕКОР: АНТИКВАРНАЯ ЛАВКА И СКЛАД ==================== */
 function renderDecorApp(body, onHudUpdate, showToast) {
-  const activeFilter = window._fleurDecorFilter || 'all';
-  const filters = [
-    { id: 'all', label: 'Все' },
-    { id: 'Магазин', label: '🏪 Зал' },
-    { id: 'Квартира', label: '🏠 Дом' },
-    { id: 'holiday', label: '🎄 Праздник/Сезон' }
+  const activeTab = window._fleurDecorSubTab || 'shop';
+  const rareIds = ensureDailyRareDecor();
+  const ownedSet = new Set([...(gameState.decor || []), ...(gameState.decorInventory || [])]);
+  const fridgeItem = DECOR_CATALOG.find((d) => d.id === 'fridge');
+
+  const todayItems = [
+    ...(fridgeItem ? [fridgeItem] : []),
+    ...rareIds.map((id) => DECOR_CATALOG.find((d) => d.id === id)).filter(Boolean)
   ];
 
-  const filtered = DECOR_CATALOG.filter((item) => {
-    if (activeFilter === 'all') return true;
-    if (activeFilter === 'holiday') return item.category === 'Праздник' || item.category === 'Сезон';
-    return item.place === activeFilter;
-  });
+  const currentShopLoc = SHOP_LOCATIONS.find((l) => l.id === gameState.shopLocationId) || SHOP_LOCATIONS[0];
+  const visibleShopDecorCount = DECOR_CATALOG.filter(
+    (d) => d.place === 'Магазин' && d.id !== 'fridge' && ownedSet.has(d.id) && !(gameState.hiddenDecor || []).includes(d.id)
+  ).length;
 
-  const filtersHtml = `
-    <div class="hashtags-row" style="padding: 0 2px;">
-      ${filters.map((f) => `
-        <button class="hashtag-chip ${activeFilter === f.id ? 'active' : ''}" data-decor-filter="${f.id}">
-          ${f.label}
-        </button>
-      `).join('')}
-    </div>
-  `;
-
-  const itemsHtml = filtered
+  const shopListHtml = todayItems
     .map((item) => {
-      const owned = gameState.decor.includes(item.id) || (item.id === 'fridge' && gameState.hasFridge);
+      const owned = ownedSet.has(item.id) || (item.id === 'fridge' && gameState.hasFridge);
       const isHidden = (gameState.hiddenDecor || []).includes(item.id);
-      const catLabel = item.category && item.category !== 'Обычный' ? ` • ${item.category}` : '';
+      const rareBadge = item.isRare ? ' • ✨ Редкое' : '';
 
       let btnHtml = `
         <button class="btn btn-primary" data-buy-decor="${item.id}" style="padding:7px 10px; font-size:11.5px;">
@@ -1036,11 +1789,11 @@ function renderDecorApp(body, onHudUpdate, showToast) {
         </button>
       `;
       if (owned && item.id === 'fridge') {
-        btnHtml = `<span class="badge badge-ok">Включён ✓</span>`;
+        btnHtml = `<span class="badge badge-ok">Куплен ✓</span>`;
       } else if (owned) {
         btnHtml = `
           <button class="btn ${isHidden ? 'btn-sage' : 'btn-soft'}" data-toggle-decor-phone="${item.id}" style="padding:7px 9px; font-size:11px;">
-            ${isHidden ? '📦 Повесить' : '✓ Висит'}
+            ${isHidden ? 'Повесить' : '✓ Висит'}
           </button>
         `;
       }
@@ -1051,7 +1804,7 @@ function renderDecorApp(body, onHudUpdate, showToast) {
           <div style="flex:1; min-width:0;">
             <div class="row-between">
               <strong style="font-size:12.5px;">${item.name}</strong>
-              <span class="badge badge-ok">${item.place}${catLabel}</span>
+              <span class="badge badge-ok">${item.place}${rareBadge}</span>
             </div>
             <p class="muted-text" style="font-size:11px; margin-top:2px;">${item.effectText}</p>
           </div>
@@ -1061,15 +1814,54 @@ function renderDecorApp(body, onHudUpdate, showToast) {
     })
     .join('');
 
+  const ownedItems = DECOR_CATALOG.filter((d) => ownedSet.has(d.id) || (d.id === 'fridge' && gameState.hasFridge));
+  const wardrobeHtml = ownedItems.length
+    ? ownedItems
+        .map((item) => {
+          const isHidden = (gameState.hiddenDecor || []).includes(item.id);
+          return `
+            <div class="decor-item-card">
+              <div class="decor-icon-box">${item.icon}</div>
+              <div style="flex:1; min-width:0;">
+                <strong style="font-size:12.5px;">${item.name}</strong>
+                <div class="muted-text" style="font-size:11px;">${item.place} • ${item.category || 'Обычный'}</div>
+              </div>
+              <button class="btn ${isHidden ? 'btn-sage' : 'btn-soft'}" data-toggle-decor-phone="${item.id}" style="padding:7px 10px; font-size:11.5px;">
+                ${isHidden ? '📦 Достать' : '✓ В интерьере'}
+              </button>
+            </div>
+          `;
+        })
+        .join('')
+    : `<p class="muted-text" style="text-align:center; padding:14px;">Склад декора пока пуст — загляни в Антикварную лавку!</p>`;
+
   body.innerHTML = `
-    <p class="muted-text" style="padding: 0 4px;">Покупай и вешай обычный, сезонный и праздничный декор!</p>
-    ${filtersHtml}
-    ${itemsHtml}
+    <div class="segmented-tabs">
+      <button class="seg-btn ${activeTab === 'shop' ? 'active' : ''}" data-decor-subtab="shop">
+        🏺 Антикварная лавка
+      </button>
+      <button class="seg-btn ${activeTab === 'wardrobe' ? 'active' : ''}" data-decor-subtab="wardrobe">
+        📦 Склад (${ownedItems.length})
+      </button>
+    </div>
+
+    ${activeTab === 'shop' ? `
+      <div class="antique-banner">
+        <strong>🏺 Завоз на сегодня (День ${gameState.day})</strong><br/>
+        Каждый день сюда привозят 2–3 случайных предмета декора и антиквариата. Заглядывай каждое утро!
+      </div>
+      ${shopListHtml}
+    ` : `
+      <p class="muted-text" style="font-size:11.5px; padding:0 4px;">
+        Все покупки сохраняются навсегда. Слоты зала (${currentShopLoc.name}): <strong>${visibleShopDecorCount}/${currentShopLoc.maxWallDecor}</strong>.
+      </p>
+      ${wardrobeHtml}
+    `}
   `;
 
-  body.querySelectorAll('[data-decor-filter]').forEach((btn) => {
+  body.querySelectorAll('[data-decor-subtab]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      window._fleurDecorFilter = btn.dataset.decorFilter;
+      window._fleurDecorSubTab = btn.dataset.decorSubtab;
       renderDecorApp(body, onHudUpdate, showToast);
     });
   });
@@ -1087,15 +1879,22 @@ function renderDecorApp(body, onHudUpdate, showToast) {
       gameState.totalSpent += item.price;
       if (item.id === 'fridge') gameState.hasFridge = true;
       if (!gameState.decor.includes(item.id)) gameState.decor.push(item.id);
-      if (Array.isArray(gameState.hiddenDecor)) {
-        gameState.hiddenDecor = gameState.hiddenDecor.filter((id) => id !== item.id);
-      }
-      gameState.mood = Math.min(100, gameState.mood + item.moodBonus);
+      if (!Array.isArray(gameState.decorInventory)) gameState.decorInventory = [];
+      if (!gameState.decorInventory.includes(item.id)) gameState.decorInventory.push(item.id);
 
+      const canHangInShop = item.place !== 'Магазин' || item.id === 'fridge' || visibleShopDecorCount < currentShopLoc.maxWallDecor;
+      if (!Array.isArray(gameState.hiddenDecor)) gameState.hiddenDecor = [];
+      if (canHangInShop) {
+        gameState.hiddenDecor = gameState.hiddenDecor.filter((id) => id !== item.id);
+      } else if (!gameState.hiddenDecor.includes(item.id)) {
+        gameState.hiddenDecor.push(item.id);
+      }
+
+      gameState.mood = Math.min(100, gameState.mood + item.moodBonus);
       playCoinSound();
       saveState();
       onHudUpdate();
-      showToast(`✨ Куплено и повешено: ${item.name}!`);
+      showToast(canHangInShop ? `✨ Куплено и размещено: ${item.name}!` : `📦 Куплено на склад: ${item.name} (в зале нет свободных мест)`);
       renderDecorApp(body, onHudUpdate, showToast);
     });
   });
@@ -1103,16 +1902,95 @@ function renderDecorApp(body, onHudUpdate, showToast) {
   body.querySelectorAll('[data-toggle-decor-phone]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.toggleDecorPhone;
+      const item = DECOR_CATALOG.find((d) => d.id === id);
       if (!Array.isArray(gameState.hiddenDecor)) gameState.hiddenDecor = [];
       if (gameState.hiddenDecor.includes(id)) {
+        if (item?.place === 'Магазин' && id !== 'fridge' && visibleShopDecorCount >= currentShopLoc.maxWallDecor) {
+          showToast(`В локации «${currentShopLoc.name}» заняты все ${currentShopLoc.maxWallDecor} места для декора!`);
+          return;
+        }
         gameState.hiddenDecor = gameState.hiddenDecor.filter((x) => x !== id);
-        showToast('✨ Украшение повешено!');
+        showToast('✨ Украшение размещено!');
       } else {
         gameState.hiddenDecor.push(id);
-        showToast('📦 Украшение убрано');
+        showToast('📦 Украшение убрано на склад');
       }
       saveState();
       renderDecorApp(body, onHudUpdate, showToast);
+    });
+  });
+}
+
+/* ==================== 5. РИЕЛТОР (ПОМЕЩЕНИЯ И КВАРТИРЫ) ==================== */
+function renderRealtorApp(body, onHudUpdate, showToast) {
+  const owned = new Set(gameState.ownedLocations || ['shop_basement', 'home_studio']);
+
+  const renderCard = (loc, kind) => {
+    const isOwned = owned.has(loc.id);
+    const isCurrent = kind === 'shop' ? gameState.shopLocationId === loc.id : gameState.homeLocationId === loc.id;
+
+    let actionBtn = '';
+    if (isCurrent) {
+      actionBtn = `<span class="badge badge-ok">Активно ✓</span>`;
+    } else if (isOwned) {
+      actionBtn = `<button class="btn btn-sage" data-select-loc="${kind}:${loc.id}" style="padding:6px 10px; font-size:11.5px;">Переехать</button>`;
+    } else {
+      actionBtn = `<button class="btn btn-primary" data-buy-loc="${kind}:${loc.id}" style="padding:6px 10px; font-size:11.5px;">Купить (${loc.price.toLocaleString('ru-RU')} ₽)</button>`;
+    }
+
+    return `
+      <div class="realtor-card ${isCurrent ? 'current' : ''}">
+        <div class="row-between">
+          <strong style="font-size:13px;">${escapeHtml(loc.name)}</strong>
+          ${actionBtn}
+        </div>
+        <p class="muted-text" style="font-size:11.5px;">${escapeHtml(loc.desc)}</p>
+      </div>
+    `;
+  };
+
+  body.innerHTML = `
+    <div class="card-title" style="padding-left:4px;">🏪 Помещения под магазин</div>
+    ${SHOP_LOCATIONS.map((l) => renderCard(l, 'shop')).join('')}
+    <div class="card-title" style="padding-left:4px; margin-top:4px;">🏠 Квартиры для флориста</div>
+    ${HOME_LOCATIONS.map((l) => renderCard(l, 'home')).join('')}
+  `;
+
+  body.querySelectorAll('[data-buy-loc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const [kind, locId] = btn.dataset.buyLoc.split(':');
+      const list = kind === 'shop' ? SHOP_LOCATIONS : HOME_LOCATIONS;
+      const loc = list.find((l) => l.id === locId);
+      if (!loc) return;
+      if (gameState.money < loc.price) {
+        showToast('Недостаточно денег на покупку недвижимости!');
+        return;
+      }
+
+      gameState.money -= loc.price;
+      gameState.totalSpent += loc.price;
+      if (!Array.isArray(gameState.ownedLocations)) gameState.ownedLocations = ['shop_basement', 'home_studio'];
+      if (!gameState.ownedLocations.includes(loc.id)) gameState.ownedLocations.push(loc.id);
+      if (kind === 'shop') gameState.shopLocationId = loc.id;
+      else gameState.homeLocationId = loc.id;
+
+      gameState.mood = Math.min(100, gameState.mood + 10);
+      playCoinSound();
+      saveState();
+      onHudUpdate();
+      showToast(`🎉 Поздравляем с переездом в «${loc.name}»!`);
+      renderRealtorApp(body, onHudUpdate, showToast);
+    });
+  });
+
+  body.querySelectorAll('[data-select-loc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const [kind, locId] = btn.dataset.selectLoc.split(':');
+      if (kind === 'shop') gameState.shopLocationId = locId;
+      else gameState.homeLocationId = locId;
+      saveState();
+      showToast('✨ Локация переключена!');
+      renderRealtorApp(body, onHudUpdate, showToast);
     });
   });
 }
@@ -1132,15 +2010,25 @@ function captureShopInteriorPhoto() {
 
   const isEvening = gameState.timeIndex === 2 || (gameState.timeMinutes || 540) >= (gameState.closeHour || 21) * 60;
   const season = getSeasonInfo(getGameDateObj(gameState.startDate, gameState.day - 1));
+  const locId = gameState.shopLocationId || 'shop_basement';
 
   if (gameState.powerOutage) {
     ctx.fillStyle = gameState.candlesLit ? '#4E3F38' : '#3E373D';
+  } else if (locId === 'shop_pavilion') {
+    ctx.fillStyle = isEvening ? '#D7E2DA' : '#F4F8F2';
+  } else if (locId === 'shop_boutique') {
+    ctx.fillStyle = isEvening ? '#E0D0C4' : '#FAF3EB';
   } else {
     ctx.fillStyle = isEvening ? '#DFCBB9' : '#F6ECE1';
   }
   ctx.fillRect(0, 0, 480, 480);
 
-  // Винтажные обои
+  if (locId === 'shop_boutique') {
+    ctx.strokeStyle = 'rgba(223, 184, 115, 0.65)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(10, 10, 460, 460);
+  }
+
   if (isShopDecorVisible('vintage_wallpaper')) {
     ctx.fillStyle = 'rgba(217, 138, 124, 0.18)';
     for (let x = 22; x < 480; x += 44) {
@@ -1160,12 +2048,11 @@ function captureShopInteriorPhoto() {
     }
   }
 
-  // Окно слева
   ctx.fillStyle = isEvening ? '#5E648B' : gameState.weather === 'rainy' ? '#95A9B8' : '#BCE1F5';
   ctx.fillRect(34, 58, 166, 128);
-  ctx.fillStyle = season.id === 'winter' ? '#F2F7FA' : season.id === 'autumn' ? '#D98A4E' : '#9CC494';
+  ctx.fillStyle = season.id === 'winter' ? '#F2F7FA' : season.id === 'autumn' ? '#D98A4E' : locId === 'shop_basement' ? '#CFC3B7' : '#9CC494';
   ctx.fillRect(34, 154, 166, 32);
-  ctx.strokeStyle = '#FFFDF9';
+  ctx.strokeStyle = locId === 'shop_boutique' ? '#DFB873' : locId === 'shop_basement' ? '#8C6D56' : '#FFFDF9';
   ctx.lineWidth = 7;
   ctx.strokeRect(34, 58, 166, 128);
   ctx.lineWidth = 3;
@@ -1176,7 +2063,6 @@ function captureShopInteriorPhoto() {
   ctx.lineTo(200, 124);
   ctx.stroke();
 
-  // Вывеска справа
   ctx.fillStyle = '#FFFDF9';
   ctx.fillRect(236, 58, 206, 54);
   ctx.strokeStyle = isShopDecorVisible('neon_sign') ? '#E58A94' : '#D5C3B3';
@@ -1187,7 +2073,6 @@ function captureShopInteriorPhoto() {
   ctx.textAlign = 'center';
   ctx.fillText((gameState.shopName || 'Fleur Atelier').slice(0, 18), 339, 91);
 
-  // Цветочная арка с плющом сверху
   if (isShopDecorVisible('shop_arch')) {
     ctx.strokeStyle = '#5A8357';
     ctx.lineWidth = 8;
@@ -1217,7 +2102,6 @@ function captureShopInteriorPhoto() {
     });
   }
 
-  // Гирлянда из сердечек
   if (isShopDecorVisible('hearts_garland_shop')) {
     ctx.strokeStyle = '#C99B95';
     ctx.lineWidth = 2;
@@ -1238,7 +2122,6 @@ function captureShopInteriorPhoto() {
     });
   }
 
-  // Праздничный венок на стене
   if (isShopDecorVisible('wreath_shop')) {
     ctx.save();
     ctx.strokeStyle = '#4D7D4E';
@@ -1260,7 +2143,6 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Винтажное зеркало на стене
   if (isShopDecorVisible('shop_mirror')) {
     ctx.save();
     ctx.fillStyle = '#C9A36B';
@@ -1285,7 +2167,6 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Меловая доска «Букет дня»
   if (isShopDecorVisible('shop_chalkboard')) {
     ctx.save();
     ctx.fillStyle = '#A97D59';
@@ -1309,7 +2190,6 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Холодильная витрина
   if (isShopDecorVisible('fridge')) {
     ctx.save();
     ctx.fillStyle = '#E8F3F7';
@@ -1340,7 +2220,6 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Новогодняя ёлка в углу за прилавком
   if (isShopDecorVisible('xmas_tree_shop')) {
     ctx.save();
     ctx.fillStyle = '#9E6B4B';
@@ -1377,13 +2256,11 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Деревянный прилавок
   ctx.fillStyle = '#C9A789';
   ctx.fillRect(24, 340, 432, 22);
   ctx.fillStyle = '#EADBC9';
   ctx.fillRect(0, 362, 480, 118);
 
-  // Живые вазы с цветами на прилавке
   const vaseColors = ['#EBD9CE', '#DCE6DB', '#F3DFDC', '#DFD9EA'];
   const count = Math.min(4, Math.max(1, gameState.inventory.length));
   const hasPumpkins = isShopDecorVisible('pumpkins_shop');
@@ -1410,15 +2287,12 @@ function captureShopInteriorPhoto() {
     ctx.fill();
   }
 
-  // Осенние тыквы прямо на прилавке справа
   if (hasPumpkins) {
     ctx.save();
-    // Листочки
     ctx.fillStyle = '#D96E34';
     ctx.beginPath();
     ctx.ellipse(354, 336, 10, 5, -0.3, 0, Math.PI * 2);
     ctx.fill();
-    // Большая тыква
     ctx.strokeStyle = '#5A7247';
     ctx.lineWidth = 3.5;
     ctx.beginPath();
@@ -1433,7 +2307,6 @@ function captureShopInteriorPhoto() {
     ctx.beginPath();
     ctx.ellipse(384, 321, 8, 19, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Вторая светлая тыковка рядом
     ctx.fillStyle = '#E8AE52';
     ctx.beginPath();
     ctx.ellipse(420, 326, 15, 14, 0, 0, Math.PI * 2);
@@ -1445,7 +2318,6 @@ function captureShopInteriorPhoto() {
     ctx.restore();
   }
 
-  // Свечка при отключении света
   if (gameState.powerOutage && gameState.candlesLit) {
     ctx.fillStyle = '#FFFDF9';
     ctx.fillRect(36, 314, 12, 26);
@@ -1466,7 +2338,6 @@ function captureShopInteriorPhoto() {
 
   return c.toDataURL('image/jpeg', 0.85);
 }
-
 
 function escapeHtml(str) {
   return String(str || '')
