@@ -63,8 +63,12 @@ export function createInitialState() {
     activePromo: null,
     directMessages: [],
     preorders: [],
+    deliveries: [],
+    floristTasks: [],
     jobPostings: [],
     employees: [],
+    franchises: [],
+    franchiseLedger: [],
     lastAutoDmKey: '',
     wholesaleDay: 0,
     wholesaleDeals: [],
@@ -116,8 +120,13 @@ export function loadState() {
     if (!state.activePromo || typeof state.activePromo !== 'object') state.activePromo = null;
     if (!Array.isArray(state.directMessages)) state.directMessages = [];
     if (!Array.isArray(state.preorders)) state.preorders = [];
+    if (!Array.isArray(state.deliveries)) state.deliveries = [];
+    if (!Array.isArray(state.floristTasks)) state.floristTasks = [];
     if (!Array.isArray(state.jobPostings)) state.jobPostings = [];
     if (!Array.isArray(state.employees)) state.employees = [];
+    state.employees = state.employees.map((e) => ({ branchId: null, ...e }));
+    if (!Array.isArray(state.franchises)) state.franchises = [];
+    if (!Array.isArray(state.franchiseLedger)) state.franchiseLedger = [];
     if (typeof state.lastAutoDmKey !== 'string') state.lastAutoDmKey = '';
     state.directMessages = state.directMessages.map((dm) => ({
       read: Boolean(dm.replyText || dm.rejected || (dm.order && dm.order.done)),
@@ -125,6 +134,7 @@ export function loadState() {
       blockedByPlayer: Boolean(dm.blockedByPlayer),
       blockedByClient: Boolean(dm.blockedByClient),
       jobApplication: dm.jobApplication || null,
+      employeeId: dm.employeeId || null,
       ...dm
     }));
     if (!Array.isArray(state.wholesaleDeals)) state.wholesaleDeals = [];
@@ -181,7 +191,7 @@ export function ensureDailyRareDecor() {
   const pool = unowned.length >= 2 ? unowned : rotatable;
 
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  const count = Math.min(shuffled.length, Math.random() < 0.5 ? 2 : 3);
+  const count = Math.min(shuffled.length, Math.random() < 0.5 ? 5 : 6);
   gameState.rareShopDay = gameState.day;
   gameState.rareShopIds = shuffled.slice(0, count).map((d) => d.id);
   saveState();
@@ -224,13 +234,11 @@ export function saveAiSettings(newSettings) {
   }
 }
 
-/** Проверка, закрыт ли магазин по времени */
 export function isShopClosedNow() {
   const closeMin = (gameState.closeHour || 21) * 60;
   return (gameState.timeMinutes || 540) >= closeMin;
 }
 
-/** Синхронизация Утро/День/Вечер с часами */
 export function syncTimeIndexWithMinutes() {
   const openMin = (gameState.openHour || 9) * 60;
   const closeMin = (gameState.closeHour || 21) * 60;
@@ -246,7 +254,6 @@ export function syncTimeIndexWithMinutes() {
   }
 }
 
-/** Прибавить минуты к игровым часам (возвращает true, если лавка впервые закрылась) */
 export function addGameMinutes(mins) {
   const wasClosed = isShopClosedNow();
   const maxMin = 23 * 60 + 55;
@@ -261,7 +268,6 @@ export function addGameMinutes(mins) {
   return justClosed;
 }
 
-/** Изменение текущей игровой даты с пересчётом сезона и погоды */
 export function setCurrentGameDate(targetDateStr) {
   const parts = String(targetDateStr || '').split('-').map(Number);
   if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
@@ -278,7 +284,6 @@ export function setCurrentGameDate(targetDateStr) {
   saveState();
 }
 
-/** Продвинуть смену (Утро -> День -> Вечер -> Закрытие, без телепортации домой) */
 export function advanceShift() {
   const openMin = (gameState.openHour || 9) * 60;
   const closeMin = (gameState.closeHour || 21) * 60;

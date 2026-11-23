@@ -462,3 +462,74 @@
   z-index: 1;
   pointer-events: none;
 }
+
+.home-star-glow {
+  filter: drop-shadow(0 0 8px rgba(155, 181, 224, 0.75));
+}
+
+.home-decor-edge {
+  position: absolute;
+  bottom: 10px;
+  pointer-events: none;
+  z-index: 2;
+  filter: drop-shadow(0 3px 4px rgba(74, 62, 57, 0.14));
+}
+
+.home-hanging-chair {
+  left: 96px;
+  bottom: 14px;
+  width: 52px;
+  height: 76px;
+}
+
+.home-guitar {
+  right: 120px;
+  bottom: 14px;
+  width: 34px;
+  height: 62px;
+}
+
+.home-fountain {
+  left: 154px;
+  bottom: 8px;
+  width: 36px;
+  height: 30px;
+}
+
+.home-scratcher {
+  right: 158px;
+  bottom: 10px;
+  width: 36px;
+  height: 54px;
+}
+
+/* Живые анимации Пискли: моргание, дыхание и хвост */
+.cat-eyelid {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: catBlink 4.4s infinite ease-in-out;
+}
+
+@keyframes catBlink {
+  0%, 91%, 100% { transform: scaleY(0); opacity: 0; }
+  94%, 96% { transform: scaleY(1); opacity: 1; }
+}
+
+.cat-tail-svg {
+  transform-origin: 30px 78px;
+  animation: catTailSway 3.2s infinite ease-in-out;
+}
+
+@keyframes catTailSway {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(7deg); }
+}
+
+.cat-walker:not(.is-walking):not(.is-purring) .cat-body-bob {
+  animation: catIdleBreath 3.5s infinite ease-in-out;
+}
+
+@keyframes catIdleBreath {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.022); }
+}

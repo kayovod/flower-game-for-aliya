@@ -834,3 +834,126 @@
 .shop-scene.loc-shop_boutique .shop-acc-plank {
   background: linear-gradient(180deg, #EED296 0%, #CFA75E 100%);
 }
+
+/* Панель команды на смене, доставок и живого общения в зале */
+.team-hall-card {
+  background: rgba(255, 253, 249, 0.94);
+  border: 1.5px solid #D9C8B8;
+  border-radius: 14px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.team-emp-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-emp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.team-emp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.team-task-panel {
+  background: #FFFFFF;
+  border: 1px dashed var(--sage);
+  border-radius: 10px;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-talk-box {
+  background: #FFFFFF;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.delivery-hall-row {
+  background: #FFF9F4;
+  border: 1px solid #E6C7B5;
+  border-radius: 10px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Визиты на филиалы франшизы: уникальные интерьеры и бухгалтерия */
+.branch-scene {
+  border-radius: 14px;
+  border: 1.5px solid var(--border-soft);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.branch-scene.branch-mall {
+  background: linear-gradient(180deg, #E8F4FA 0%, #F8F3ED 68%, #DFCEBE 100%);
+  border-color: #B9D1DF;
+}
+
+.branch-scene.branch-metro {
+  background: linear-gradient(180deg, #E5E8EE 0%, #F2EAE3 68%, #D4C4B8 100%);
+  border-color: #C3B8B2;
+}
+
+.branch-scene.branch-boutique {
+  background: linear-gradient(180deg, #FFFBF2 0%, #F6E9D7 68%, #DFC39D 100%);
+  border-color: #DFB873;
+}
+
+.branch-counter {
+  background: rgba(255, 253, 249, 0.92);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 7px 9px;
+}
+
+.branch-employee-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branch-event-card {
+  background: #FFF9F3;
+  border: 1.5px dashed #DFAB4E;
+  border-radius: 12px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-soft);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+}

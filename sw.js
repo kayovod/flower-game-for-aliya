@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fleur-atelier-v7';
+const CACHE_NAME = 'fleur-atelier-v10';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -18,11 +18,30 @@ const ASSETS_TO_CACHE = [
   './js/main.js',
   './js/graphics/flowersSvg.js',
   './js/graphics/avatarSvg.js',
+  './js/graphics/shopScenerySvg.js',
+  './js/graphics/homeDecorSvg.js',
+  './js/ai/aiCore.js',
+  './js/ai/clientGenerator.js',
+  './js/ai/clientTemplates.js',
+  './js/ai/jobsAi.js',
+  './js/ai/socialAi.js',
+  './js/ai/teamAi.js',
+  './js/ai/franchiseAi.js',
   './js/screens/shopScreen.js',
   './js/screens/bouquetMaker.js',
   './js/screens/phoneScreen.js',
   './js/screens/homeScreen.js',
-  './js/screens/financeSettingsScreen.js'
+  './js/screens/financeSettingsScreen.js',
+  './js/screens/franchiseVisitScreen.js',
+  './js/screens/phone/phoneInsta.js',
+  './js/screens/phone/phoneDirect.js',
+  './js/screens/phone/phoneWholesale.js',
+  './js/screens/phone/phoneDecor.js',
+  './js/screens/phone/phoneRealtor.js',
+  './js/screens/phone/phoneCanvasSnap.js',
+  './js/screens/shop/shopClientZone.js',
+  './js/screens/shop/shopInspector.js',
+  './js/screens/shop/shopTeamZone.js'
 ];
 
 self.addEventListener('install', (event) => {

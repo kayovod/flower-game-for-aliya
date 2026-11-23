@@ -1,597 +1,550 @@
-import { AI_PROVIDERS, getGameDateObj, getHolidayForDate, getSeasonInfo } from '../config.js';
+/**
+ * js/screens/financeSettingsScreen.js
+ * Бухгалтерия сети, управление сотрудниками, профиль лавки, бейджик и настройки ИИ
+ */
+
+import { AI_PROVIDERS, JOB_ROLES, FRANCHISE_CATALOG } from '../config.js';
 import { gameState, aiSettings, saveState, saveAiSettings, resetState, setCurrentGameDate } from '../state.js';
 import { testAiConnection, resolvePlayerGender } from '../ai.js';
-import { setAmbientMode, stopAmbient } from '../sound.js';
+import { openBranchVisitModal } from './franchiseVisitScreen.js';
 
-let currentSubTab = 'finance'; // 'finance' | 'settings'
-const ADMIN_UNLOCK_KEY = 'fleur_atelier_admin_v1';
+let activeTab = 'cash';
+let isTestingAi = false;
+let showApiKey = false;
+let aiStatusMessage = null;
 
 export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
   const container = document.getElementById('screen-finance');
   if (!container) return;
 
-  container.innerHTML = `
+  const headerHtml = `
     <div class="screen-header">
       <h1 class="screen-title">Касса и ИИ</h1>
+      <span class="badge ${gameState.rentWarning ? 'badge-warn' : 'badge-ok'}">
+        Аренда через ${gameState.daysUntilRent} дн.
+      </span>
     </div>
 
     <div class="segmented-tabs">
-      <button class="seg-btn ${currentSubTab === 'finance' ? 'active' : ''}" data-subtab="finance">
-        💰 Бухгалтерия
-      </button>
-      <button class="seg-btn ${currentSubTab === 'settings' ? 'active' : ''}" data-subtab="settings">
-        ⚙️ Настройки и ИИ
-      </button>
+      <button class="seg-btn ${activeTab === 'cash' ? 'active' : ''}" data-fin-tab="cash">💰 Касса</button>
+      <button class="seg-btn ${activeTab === 'settings' ? 'active' : ''}" data-fin-tab="settings">🤖 Настройки и ИИ</button>
     </div>
-
-    <div id="finance-subtab-body" style="display: flex; flex-direction: column; gap: 12px;"></div>
-    <div id="finance-admin-footer" style="margin-top: 8px;"></div>
   `;
 
-  container.querySelectorAll('[data-subtab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      currentSubTab = btn.dataset.subtab;
-      renderFinanceSettingsScreen(onHudUpdate, showToast);
-    });
-  });
+  if (activeTab === 'cash') {
+    const netProfit = gameState.totalEarned - gameState.totalSpent;
+    const employees = Array.isArray(gameState.employees) ? gameState.employees : [];
+    const franchises = Array.isArray(gameState.franchises) ? gameState.franchises : [];
+    const ledger = Array.isArray(gameState.franchiseLedger) ? gameState.franchiseLedger : [];
 
-  const body = document.getElementById('finance-subtab-body');
-  if (currentSubTab === 'finance') {
-    renderFinanceTab(body, onHudUpdate, showToast);
-  } else {
-    renderSettingsTab(body, onHudUpdate, showToast);
-  }
-  renderAdminFooter(onHudUpdate, showToast);
-}
+    const totalBranchEarned = franchises.reduce((s, b) => s + (b.totalEarned || 0), 0);
+    const totalDailySalaries = employees.reduce((s, e) => s + (Number(e.salary) || 0), 0);
+    const totalWeeklyBranchRent = franchises.reduce((s, b) => {
+      const meta = FRANCHISE_CATALOG.find((m) => m.id === b.id);
+      return s + (meta ? meta.weeklyRent : 0);
+    }, 0);
 
-function renderFinanceTab(body, onHudUpdate, showToast) {
-  const curDate = getGameDateObj(gameState.startDate, gameState.day - 1);
-  const todayHoliday = getHolidayForDate(curDate);
-  const holidayText = todayHoliday
-    ? `🎉 Сегодня ${todayHoliday.name}! Спрос x3, цены поставщиков x2.`
-    : 'Ближайшие крупные праздники: 14 Февраля, 8 Марта, 1 Сентября и др.';
+    const employeesHtml = employees.length
+      ? employees
+          .map((emp) => {
+            const roleMeta = JOB_ROLES.find((r) => r.id === emp.roleId);
+            const branchOptions = [
+              `<option value="" ${!emp.branchId ? 'selected' : ''}>🏪 Главная лавка</option>`,
+              ...franchises.map((b) => `<option value="${b.id}" ${emp.branchId === b.id ? 'selected' : ''}>🏢 ${escapeHtml(b.name)}</option>`)
+            ].join('');
 
-  const balanceBadge =
-    gameState.money >= 0
-      ? '<span class="badge badge-ok">Плюс</span>'
-      : '<span class="badge badge-warn">Долг арендодателю!</span>';
-
-  const employees = Array.isArray(gameState.employees) ? gameState.employees : [];
-  const totalPayroll = employees.reduce((sum, e) => sum + (Number(e.salary) || 0), 0);
-  const employeesHtml = employees.length
-    ? employees
-        .map(
-          (emp) => `
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--bg-soft); padding:8px 10px; border-radius:10px;">
-            <div style="flex:1; min-width:0;">
-              <strong style="font-size:12.5px;">${emp.roleIcon || '💼'} ${escapeHtml(emp.name)}, ${emp.age}</strong>
-              <div class="muted-text" style="font-size:11px;">
-                ${escapeHtml(emp.roleName)} • ${escapeHtml(emp.locationName)}
+            return `
+              <div class="dm-card" style="padding:10px; gap:6px;">
+                <div class="row-between">
+                  <div style="flex:1; min-width:0;">
+                    <strong style="font-size:13px;">${roleMeta?.icon || '👤'} ${escapeHtml(emp.name)}, ${emp.age}</strong>
+                    <div class="muted-text" style="font-size:11.5px;">
+                      ${escapeHtml(emp.roleName)} • ${emp.salary} ₽/смену • ${escapeHtml(emp.scheduleLabel)}
+                    </div>
+                  </div>
+                  <button class="btn btn-danger" data-fire-emp="${emp.id}" style="padding:5px 9px; font-size:11px;">Уволить</button>
+                </div>
+                ${
+                  franchises.length
+                    ? `<div style="display:flex; gap:6px; align-items:center;">
+                        <span class="muted-text" style="font-size:11px;">Точка:</span>
+                        <select class="form-select" data-move-emp="${emp.id}" style="padding:5px 8px; font-size:11.5px; flex:1;">
+                          ${branchOptions}
+                        </select>
+                      </div>`
+                    : ''
+                }
               </div>
-              <div class="muted-text" style="font-size:10.5px;">
-                🕒 ${escapeHtml(emp.scheduleLabel)}${emp.hasCar ? ' • 🚗 Своё авто' : ''} • <strong>${emp.salary} ₽/см.</strong>
+            `;
+          })
+          .join('')
+      : `<p class="muted-text" style="font-size:12px;">Сотрудников пока нет. Подай объявление в «Телефон → Insta»!</p>`;
+
+    const franchisesSummaryHtml = franchises.length
+      ? franchises
+          .map((b) => {
+            const meta = FRANCHISE_CATALOG.find((m) => m.id === b.id);
+            const assigned = employees.filter((e) => e.branchId === b.id);
+            const branchStaffSal = assigned.reduce((s, e) => s + (Number(e.salary) || 0), 0);
+            return `
+              <div class="dm-card" style="padding:10px; gap:5px;">
+                <div class="row-between">
+                  <strong style="font-size:12.5px;">${meta?.icon || '🏢'} ${escapeHtml(b.name)}</strong>
+                  <button class="btn btn-sage" data-cash-visit-branch="${b.id}" style="padding:4px 9px; font-size:11px;">🚗 Визит</button>
+                </div>
+                <div class="muted-text" style="font-size:11.5px;">
+                  Команда: <strong>${assigned.length ? assigned.map((e) => e.name).join(', ') : 'никто (точка закрыта)'}</strong>
+                </div>
+                <div class="row-between" style="font-size:11.5px;">
+                  <span>Сегодня: <strong>+${b.todayEarned || 0} ₽</strong></span>
+                  <span>Всего: <strong>${b.totalEarned || 0} ₽</strong></span>
+                  <span>Расход/д.: <strong>~${Math.round((meta?.weeklyRent || 0) / 7) + branchStaffSal} ₽</strong></span>
+                </div>
               </div>
-            </div>
-            <button class="btn btn-danger" data-fire-emp="${emp.id}" style="padding:5px 8px; font-size:11px; flex-shrink:0;">
-              Уволить
-            </button>
+            `;
+          })
+          .join('')
+      : `<p class="muted-text" style="font-size:12px;">Филиалов пока нет — их можно открыть в «Телефон → Риелтор → Франшиза».</p>`;
+
+    const ledgerHtml = ledger.length
+      ? ledger
+          .slice(0, 8)
+          .map(
+            (row) => `
+          <div class="ledger-row">
+            <span class="muted-text">Д${row.day}</span>
+            <span style="flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(row.branchName)} (${escapeHtml(row.note || '')})</span>
+            <strong style="color:${row.net >= 0 ? 'var(--sage-dark)' : 'var(--danger)'};">${row.net >= 0 ? '+' : ''}${row.net} ₽</strong>
           </div>
         `
-        )
-        .join('')
-    : `<p class="muted-text" style="font-size:12px;">Команда пока не набрана. Подай объявление в «📱 Телефон» → «📸 Insta» кнопкой «📢 Подать объявление о работе»!</p>`;
+          )
+          .join('')
+      : `<p class="muted-text" style="font-size:11.5px;">Проводок по сети пока нет — отчёт появится после закрытия дня или визита.</p>`;
 
-  body.innerHTML = `
-    <div class="card">
-      <div class="row-between">
-        <div class="card-title">🏦 Состояние счёта</div>
-        ${balanceBadge}
+    container.innerHTML = `
+      ${headerHtml}
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <div class="card" style="padding:12px; gap:4px;">
+          <span class="muted-text" style="font-size:11.5px;">💰 В кассе сейчас</span>
+          <strong style="font-size:17px; color:var(--sage-dark);">${gameState.money} ₽</strong>
+        </div>
+        <div class="card" style="padding:12px; gap:4px;">
+          <span class="muted-text" style="font-size:11.5px;">📈 Всего заработано</span>
+          <strong style="font-size:17px; color:var(--text-main);">${gameState.totalEarned} ₽</strong>
+        </div>
+        <div class="card" style="padding:12px; gap:4px;">
+          <span class="muted-text" style="font-size:11.5px;">🏢 Выручка филиалов</span>
+          <strong style="font-size:16px; color:var(--text-main);">${totalBranchEarned} ₽</strong>
+        </div>
+        <div class="card" style="padding:12px; gap:4px;">
+          <span class="muted-text" style="font-size:11.5px;">⚖️ Чистый баланс</span>
+          <strong style="font-size:16px; color:${netProfit >= 0 ? 'var(--sage-dark)' : 'var(--danger)'};">${netProfit >= 0 ? '+' : ''}${netProfit} ₽</strong>
+        </div>
       </div>
-      <div class="row-between">
-        <span class="muted-text">Текущий баланс:</span>
-        <strong>${gameState.money.toLocaleString('ru-RU')} ₽</strong>
-      </div>
-      <div class="row-between">
-        <span class="muted-text">Еженедельная аренда и свет:</span>
-        <strong>${gameState.weeklyRent.toLocaleString('ru-RU')} ₽</strong>
-      </div>
-      <div class="row-between">
-        <span class="muted-text">До оплаты аренды:</span>
-        <strong>${gameState.daysUntilRent} дн.</strong>
-      </div>
-    </div>
 
-    <div class="card">
-      <div class="row-between">
-        <div class="card-title">👥 Команда лавки (${employees.length})</div>
-        ${employees.length ? `<span class="badge badge-ok">${totalPayroll.toLocaleString('ru-RU')} ₽/см.</span>` : ''}
+      <div class="card">
+        <div class="row-between">
+          <div class="card-title">🏢 Сводная бухгалтерия сети (${franchises.length} точ.)</div>
+          <span class="badge badge-warn">${gameState.weeklyRent + totalWeeklyBranchRent} ₽/нед</span>
+        </div>
+        <div class="row-between" style="font-size:12.5px;">
+          <span class="muted-text">Аренда главной лавки (через ${gameState.daysUntilRent} дн.)</span>
+          <strong>${gameState.weeklyRent} ₽/нед</strong>
+        </div>
+        <div class="row-between" style="font-size:12.5px;">
+          <span class="muted-text">Зарплаты команды (${employees.length} чел.)</span>
+          <strong>${totalDailySalaries} ₽/день</strong>
+        </div>
+        ${franchisesSummaryHtml}
+        <div style="display:flex; flex-direction:column; gap:5px; margin-top:4px;">
+          <strong style="font-size:12px;">📋 Последние проводки по филиалам:</strong>
+          ${ledgerHtml}
+        </div>
       </div>
-      <div style="display:flex; flex-direction:column; gap:7px;">
+
+      <div class="card">
+        <div class="row-between">
+          <div class="card-title">👥 Команда (${employees.length})</div>
+          <span class="muted-text" style="font-size:11.5px;">Распределение по точкам</span>
+        </div>
         ${employeesHtml}
       </div>
-    </div>
 
-    <div class="card">
-      <div class="card-title">📊 Статистика лавки</div>
-      <div class="row-between">
-        <span class="muted-text">Продано букетов/цветов:</span>
-        <strong>${gameState.bouquetsSold}</strong>
+      <div class="card">
+        <div class="card-title">🏷️ Профиль лавки и бейджик</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div class="form-group">
+            <label class="form-label">Название магазина</label>
+            <input type="text" class="form-input" id="shop-name-input" autocomplete="off" value="${escapeAttr(gameState.shopName || 'Fleur Atelier')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ник в InstaFlower</label>
+            <input type="text" class="form-input" id="insta-handle-input" autocomplete="off" value="${escapeAttr(gameState.instaHandle || '@fleur_atelier')}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Твоё имя на бейджике для клиентов</label>
+          <input type="text" class="form-input" id="badge-name-input" autocomplete="off" value="${escapeAttr(gameState.playerBadgeName || '')}" placeholder="Например: Алия" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Пол на бейджике (как к тебе обращаться ИИ)</label>
+          <select class="form-select" id="badge-gender-select">
+            <option value="auto" ${gameState.playerBadgeGender === 'auto' ? 'selected' : ''}>Определять автоматически по имени</option>
+            <option value="female" ${gameState.playerBadgeGender === 'female' ? 'selected' : ''}>Женский (флористка, она)</option>
+            <option value="male" ${gameState.playerBadgeGender === 'male' ? 'selected' : ''}>Мужской (флорист, он)</option>
+          </select>
+          <div id="badge-gender-detected" class="muted-text" style="font-size:11.5px; margin-top:2px;"></div>
+        </div>
+        <button class="btn btn-sage" id="btn-save-badge">💾 Сохранить профиль и бейджик</button>
       </div>
-      <div class="row-between">
-        <span class="muted-text">Всего заработано:</span>
-        <strong>${gameState.totalEarned.toLocaleString('ru-RU')} ₽</strong>
-      </div>
-      <div class="row-between">
-        <span class="muted-text">Всего потрачено:</span>
-        <strong>${gameState.totalSpent.toLocaleString('ru-RU')} ₽</strong>
-      </div>
-    </div>
+    `;
 
-    <div class="card">
-      <div class="card-title">📅 Календарь сезонности</div>
-      <p class="muted-text">${holidayText}</p>
-    </div>
-  `;
-
-  body.querySelectorAll('[data-fire-emp]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const empId = btn.dataset.fireEmp;
-      const emp = (gameState.employees || []).find((e) => e.id === empId);
-      if (!emp) return;
-      if (confirm(`Точно уволить сотрудника ${emp.name} (${emp.roleName})?`)) {
-        gameState.employees = (gameState.employees || []).filter((e) => e.id !== empId);
+    container.querySelectorAll('[data-fire-emp]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const emp = (gameState.employees || []).find((e) => e.id === btn.dataset.fireEmp);
+        if (!emp) return;
+        gameState.employees = gameState.employees.filter((e) => e.id !== emp.id);
         saveState();
         showToast(`${emp.name} уволен(а) из команды`);
         renderFinanceSettingsScreen(onHudUpdate, showToast);
-      }
+      });
     });
-  });
-}
 
-async function renderSettingsTab(body, onHudUpdate, showToast) {
-  const selectedProvider = AI_PROVIDERS[aiSettings.provider] || AI_PROVIDERS.openrouter;
-  const providerOptions = Object.values(AI_PROVIDERS)
-    .map(
-      (p) =>
-        `<option value="${p.id}" ${p.id === aiSettings.provider ? 'selected' : ''}>${p.name}</option>`
-    )
-    .join('');
-
-  const curDateObj = getGameDateObj(gameState.startDate, gameState.day - 1);
-  const curDateStr = `${curDateObj.getFullYear()}-${String(curDateObj.getMonth() + 1).padStart(2, '0')}-${String(curDateObj.getDate()).padStart(2, '0')}`;
-  const curSeason = getSeasonInfo(curDateObj);
-
-  const badgeName = (gameState.playerBadgeName || '').trim();
-  const resolvedBadgeGender = resolvePlayerGender(badgeName, gameState.playerGender);
-  const badgeStatusHtml = !badgeName
-    ? '<span class="badge badge-warn">Снят</span>'
-    : `<span class="badge badge-ok">${resolvedBadgeGender === 'female' ? '👩 Жен. род' : '👨 Муж. род'}</span>`;
-
-  body.innerHTML = `
-    <div class="card">
-      <div class="row-between">
-        <div class="card-title">🏪 Лавка, график и дата</div>
-        <span class="badge badge-ok">${curSeason.label}</span>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="set-shop-name">Название магазина</label>
-        <input type="text" class="form-input" id="set-shop-name" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.shopName || 'Fleur Atelier')}" maxlength="24" />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="set-insta-handle">Ник канала в InstaFlower</label>
-        <input type="text" class="form-input" id="set-insta-handle" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.instaHandle || '@fleur_atelier')}" maxlength="24" />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="set-current-date">Дата и время года за окном</label>
-        <input type="date" class="form-input" id="set-current-date" value="${curDateStr}" />
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-        <div class="form-group">
-          <label class="form-label" for="set-open-hour">Открытие</label>
-          <select class="form-select" id="set-open-hour">
-            ${[7, 8, 9, 10, 11].map((h) => `<option value="${h}" ${(gameState.openHour || 9) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="set-close-hour">Закрытие</label>
-          <select class="form-select" id="set-close-hour">
-            ${[18, 19, 20, 21, 22, 23].map((h) => `<option value="${h}" ${(gameState.closeHour || 21) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <button class="btn btn-primary" id="btn-save-shop-profile">💾 Сохранить параметры лавки</button>
-    </div>
-
-    <div class="card">
-      <div class="row-between">
-        <div class="card-title">🏷️ Бейджик флориста</div>
-        ${badgeStatusHtml}
-      </div>
-      <p class="muted-text" style="font-size:12px;">
-        Если впишешь имя на бейджике, клиенты в зале и в Direct будут иногда обращаться к тебе по имени (как в жизни — не всегда, но приятно).
-      </p>
-      <div class="form-group">
-        <label class="form-label" for="badge-name-input">Твоё имя на бейджике</label>
-        <input
-          type="text"
-          class="form-input"
-          id="badge-name-input"
-          autocomplete="off"
-          data-form-type="other"
-          data-lpignore="true"
-          placeholder="Например: Алия (оставь пустым, чтобы снять)"
-          value="${escapeAttr(gameState.playerBadgeName || '')}"
-          maxlength="20"
-        />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="badge-gender-select">Обращение к тебе (род)</label>
-        <select class="form-select" id="badge-gender-select">
-          <option value="auto" ${(gameState.playerGender || 'auto') === 'auto' ? 'selected' : ''}>✨ Определять автоматически по имени</option>
-          <option value="female" ${gameState.playerGender === 'female' ? 'selected' : ''}>👩 Женский род (подсказала, молодец)</option>
-          <option value="male" ${gameState.playerGender === 'male' ? 'selected' : ''}>👨 Мужской род (подсказал, молодец)</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" id="btn-save-badge">🏷️ Сохранить бейджик</button>
-    </div>
-
-    <div class="card">
-      <div class="card-title">🔊 Звук и Фоновая музыка</div>
-      <button class="btn ${gameState.soundEnabled ? 'btn-sage' : 'btn-soft'}" id="btn-toggle-sound">
-        ${gameState.soundEnabled ? '🔊 Все звуки игры: Включены' : '🔇 Все звуки игры: Выключены'}
-      </button>
-
-      <div class="form-group">
-        <label class="form-label" for="ambient-mode-select">Фоновая атмосфера</label>
-        <select class="form-select" id="ambient-mode-select" ${!gameState.soundEnabled ? 'disabled' : ''}>
-          <option value="none" ${gameState.ambientMode === 'none' ? 'selected' : ''}>🔇 Без фона</option>
-          <option value="music" ${gameState.ambientMode === 'music' ? 'selected' : ''}>🎹 Спокойная уютная музыка</option>
-          <option value="rain" ${gameState.ambientMode === 'rain' ? 'selected' : ''}>🌧️ Мягкий шум дождя</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">🐱 Питомец в Домике</div>
-      <div class="form-group">
-        <label class="form-label" for="pet-name-input">Имя кошки</label>
-        <div style="display:flex; gap:6px;">
-          <input type="text" class="form-input" id="pet-name-input" autocomplete="off" data-form-type="other" data-lpignore="true" value="${escapeAttr(gameState.petName || 'Пискля')}" maxlength="20" style="flex:1;" />
-          <button class="btn btn-primary" id="btn-save-pet-name" style="padding:10px 14px;">Сохранить</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">🧠 Настройка ИИ и API-ключа</div>
-      <p class="muted-text">
-        Ключ сохраняется только в памяти твоего браузера. Рекомендуется Gemini или OpenRouter.
-      </p>
-
-      <div class="form-group">
-        <label class="form-label" for="ai-provider-select">Провайдер ИИ</label>
-        <select class="form-select" id="ai-provider-select">${providerOptions}</select>
-      </div>
-
-      <div id="custom-api-fields" style="display: ${selectedProvider.needsKey ? 'flex' : 'none'}; flex-direction: column; gap: 10px;">
-        <div class="form-group">
-          <label class="form-label" for="ai-api-key">API-ключ</label>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <input
-              type="text"
-              class="form-input masked-input"
-              id="ai-api-key"
-              name="fleur-custom-key"
-              autocomplete="off"
-              autocorrect="off"
-              spellcheck="false"
-              data-form-type="other"
-              data-lpignore="true"
-              placeholder="Вставь ключ (sk-or-..., sk-..., AIza...)"
-              value="${escapeAttr(aiSettings.apiKey)}"
-              style="flex: 1;"
-            />
-            <button type="button" class="btn btn-soft" id="btn-toggle-key-eye" title="Показать / скрыть ключ" style="padding: 10px 12px;">
-              👁️
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="ai-model-input">Название модели</label>
-          <input
-            type="text"
-            class="form-input"
-            id="ai-model-input"
-            autocomplete="off"
-            data-form-type="other"
-            data-lpignore="true"
-            placeholder="${selectedProvider.defaultModel}"
-            value="${escapeAttr(aiSettings.model || selectedProvider.defaultModel)}"
-          />
-        </div>
-
-        <details style="font-size: 12px; color: var(--text-muted);">
-          <summary style="cursor: pointer; font-weight: 700;">Расширенные настройки (Base URL)</summary>
-          <div class="form-group" style="margin-top: 8px;">
-            <input
-              type="text"
-              class="form-input"
-              id="ai-baseurl-input"
-              autocomplete="off"
-              data-form-type="other"
-              data-lpignore="true"
-              placeholder="${selectedProvider.defaultBaseUrl}"
-              value="${escapeAttr(aiSettings.baseUrl || selectedProvider.defaultBaseUrl)}"
-            />
-          </div>
-        </details>
-      </div>
-
-      <button class="btn btn-primary" id="btn-save-ai">💾 Сохранить настройки ИИ</button>
-      <button class="btn btn-sage" id="btn-test-ai">🧪 Проверить связь с ИИ</button>
-      <div id="ai-test-result" class="muted-text" style="display:none; padding: 8px; background: var(--bg-soft); border-radius: 8px;"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">🗑️ Сброс прогресса</div>
-      <button class="btn btn-danger" id="btn-reset-game">🗑️ Начать игру заново</button>
-      <p style="margin-top: 8px; padding: 10px; border-radius: 12px; background: var(--bg-accent-soft); color: var(--primary-hover); font-size: 12.5px; font-weight: 800; text-align: center; line-height: 1.45;">
-        Моей единственной и самой любимой полноценная игра, только для тебя Алиюш ❤️
-      </p>
-    </div>
-  `;
-
-  setupAiForm(showToast);
-  setupGameControls(onHudUpdate, showToast);
-}
-
-function setupAiForm(showToast) {
-  const select = document.getElementById('ai-provider-select');
-  const fields = document.getElementById('custom-api-fields');
-  const keyInput = document.getElementById('ai-api-key');
-  const modelInput = document.getElementById('ai-model-input');
-  const baseUrlInput = document.getElementById('ai-baseurl-input');
-  const saveBtn = document.getElementById('btn-save-ai');
-  const testBtn = document.getElementById('btn-test-ai');
-  const testResult = document.getElementById('ai-test-result');
-
-  const toggleEyeBtn = document.getElementById('btn-toggle-key-eye');
-  toggleEyeBtn?.addEventListener('click', () => {
-    const isHidden = keyInput.classList.toggle('masked-input');
-    toggleEyeBtn.textContent = isHidden ? '👁️' : '🙈';
-  });
-
-  select.addEventListener('change', () => {
-    const provider = AI_PROVIDERS[select.value];
-    fields.style.display = provider.needsKey ? 'flex' : 'none';
-    modelInput.value = provider.defaultModel;
-    baseUrlInput.value = provider.defaultBaseUrl;
-  });
-
-  const applyFormToSettings = () => {
-    const providerId = select.value;
-    const provider = AI_PROVIDERS[providerId];
-    const apiKey = keyInput.value.trim();
-
-    if (provider.needsKey && !apiKey) {
-      showToast('Вставь API-ключ для выбранного провайдера');
-      return false;
-    }
-
-    saveAiSettings({
-      provider: providerId,
-      apiKey,
-      model: modelInput.value.trim() || provider.defaultModel,
-      baseUrl: baseUrlInput.value.trim() || provider.defaultBaseUrl
+    container.querySelectorAll('[data-move-emp]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const emp = (gameState.employees || []).find((e) => e.id === sel.dataset.moveEmp);
+        if (!emp) return;
+        emp.branchId = sel.value || null;
+        const targetName = emp.branchId
+          ? FRANCHISE_CATALOG.find((b) => b.id === emp.branchId)?.name || 'филиал'
+          : 'Главная лавка';
+        saveState();
+        showToast(`👤 ${emp.name} назначен(а): «${targetName}»`);
+        renderFinanceSettingsScreen(onHudUpdate, showToast);
+      });
     });
-    return true;
-  };
 
-  saveBtn.addEventListener('click', () => {
-    if (!applyFormToSettings()) return;
-    const provider = AI_PROVIDERS[select.value];
-    showToast(`Настройки ИИ сохранены (${provider.name})`);
-  });
+    container.querySelectorAll('[data-cash-visit-branch]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openBranchVisitModal(btn.dataset.cashVisitBranch, onHudUpdate, showToast, () => {
+          renderFinanceSettingsScreen(onHudUpdate, showToast);
+        });
+      });
+    });
 
-  testBtn.addEventListener('click', async () => {
-    if (!applyFormToSettings()) return;
-    testBtn.disabled = true;
-    testBtn.textContent = '⏳ Проверяем...';
-    testResult.style.display = 'block';
-    testResult.textContent = 'Отправляем пробный запрос...';
+    const updateGenderHint = () => {
+      const previewEl = document.getElementById('badge-gender-detected');
+      if (!previewEl) return;
+      const tmpName = document.getElementById('badge-name-input')?.value.trim() || '';
+      const tmpMode = document.getElementById('badge-gender-select')?.value || 'auto';
+      const prevN = gameState.playerBadgeName;
+      const prevG = gameState.playerBadgeGender;
+      gameState.playerBadgeName = tmpName;
+      gameState.playerBadgeGender = tmpMode;
+      const detected = resolvePlayerGender();
+      gameState.playerBadgeName = prevN;
+      gameState.playerBadgeGender = prevG;
 
-    try {
-      const reply = await testAiConnection();
-      testResult.textContent = `✅ Связь работает! Ответ ИИ: «${reply}»`;
-      showToast('ИИ подключен и отвечает!');
-    } catch (err) {
-      testResult.textContent = `❌ Ошибка: ${err.message}`;
-    } finally {
-      testBtn.disabled = false;
-      testBtn.textContent = '🧪 Проверить связь с ИИ';
-    }
-  });
-}
+      const labelMap = {
+        female: '👩 Женский (обращение: флористка, она)',
+        male: '👨 Мужской (обращение: флорист, он)',
+        neutral: '🙂 Нейтральный (введи имя или выбери вручную)'
+      };
+      previewEl.textContent = `Определённый пол: ${labelMap[detected] || labelMap.neutral}`;
+    };
+    updateGenderHint();
+    document.getElementById('badge-name-input')?.addEventListener('input', updateGenderHint);
+    document.getElementById('badge-gender-select')?.addEventListener('change', updateGenderHint);
 
-function setupGameControls(onHudUpdate, showToast) {
-  const soundBtn = document.getElementById('btn-toggle-sound');
-  const ambientSelect = document.getElementById('ambient-mode-select');
-  const petInput = document.getElementById('pet-name-input');
-  const savePetBtn = document.getElementById('btn-save-pet-name');
-  const saveShopBtn = document.getElementById('btn-save-shop-profile');
-  const saveBadgeBtn = document.getElementById('btn-save-badge');
-  const resetBtn = document.getElementById('btn-reset-game');
+    document.getElementById('btn-save-badge')?.addEventListener('click', () => {
+      const shopInput = document.getElementById('shop-name-input')?.value.trim();
+      let instaInput = document.getElementById('insta-handle-input')?.value.trim();
+      if (instaInput && !instaInput.startsWith('@')) instaInput = '@' + instaInput;
+      const nameInput = document.getElementById('badge-name-input')?.value.trim() || '';
+      const genderSel = document.getElementById('badge-gender-select')?.value || 'auto';
 
-  saveShopBtn?.addEventListener('click', () => {
-    const shopName = document.getElementById('set-shop-name')?.value.trim() || 'Fleur Atelier';
-    let insta = document.getElementById('set-insta-handle')?.value.trim() || '@fleur_atelier';
-    if (!insta.startsWith('@')) insta = '@' + insta;
-    const openHour = Number(document.getElementById('set-open-hour')?.value) || 9;
-    const closeHour = Number(document.getElementById('set-close-hour')?.value) || 21;
-    const newDate = document.getElementById('set-current-date')?.value;
-
-    gameState.shopName = shopName;
-    gameState.instaHandle = insta;
-    gameState.openHour = openHour;
-    gameState.closeHour = closeHour;
-    gameState.shownCloseHint = (gameState.timeMinutes || 540) >= closeHour * 60;
-
-    if (newDate) setCurrentGameDate(newDate);
-    else saveState();
-
-    onHudUpdate();
-    renderSettingsTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
-    showToast(`✨ Настройки лавки «${shopName}» и дата обновлены!`);
-  });
-
-  soundBtn.addEventListener('click', () => {
-    gameState.soundEnabled = !gameState.soundEnabled;
-    if (!gameState.soundEnabled) {
-      stopAmbient();
-    } else if (gameState.ambientMode !== 'none') {
-      setAmbientMode(gameState.ambientMode);
-    }
-    saveState();
-    renderFinanceSettingsScreen(onHudUpdate, showToast);
-    showToast(gameState.soundEnabled ? 'Звук включён' : 'Звук полностью выключен');
-  });
-
-  ambientSelect.addEventListener('change', () => {
-    gameState.ambientMode = ambientSelect.value;
-    setAmbientMode(gameState.ambientMode);
-    saveState();
-    showToast(
-      gameState.ambientMode === 'music'
-        ? '🎹 Спокойная музыка включена'
-        : gameState.ambientMode === 'rain'
-        ? '🌧️ Шум дождя включён'
-        : 'Фон выключен'
+      if (shopInput) gameState.shopName = shopInput;
+      if (instaInput) gameState.instaHandle = instaInput;
+      gameState.playerBadgeName = nameInput;
+      gameState.playerBadgeGender = genderSel;
+      saveState();
+      onHudUpdate();
+      showToast('✨ Профиль лавки и бейджик сохранены!');
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+  } else {
+    const provMeta = AI_PROVIDERS[aiSettings.provider] || AI_PROVIDERS.openrouter;
+    const curDateObj = new Date(
+      Number((gameState.startDate || '2026-02-08').split('-')[0]),
+      Number((gameState.startDate || '2026-02-08').split('-')[1]) - 1,
+      Number((gameState.startDate || '2026-02-08').split('-')[2]) + (gameState.day - 1)
     );
-  });
+    const curIso = `${curDateObj.getFullYear()}-${String(curDateObj.getMonth() + 1).padStart(2, '0')}-${String(curDateObj.getDate()).padStart(2, '0')}`;
 
-  savePetBtn.addEventListener('click', () => {
-    const newName = petInput.value.trim() || 'Пискля';
-    gameState.petName = newName;
-    saveState();
-    showToast(`🐱 Имя питомца изменено на «${newName}»`);
-  });
+    const providerOptions = Object.values(AI_PROVIDERS)
+      .map((p) => `<option value="${p.id}" ${p.id === aiSettings.provider ? 'selected' : ''}>${p.name}</option>`)
+      .join('');
 
-  saveBadgeBtn?.addEventListener('click', () => {
-    const badgeName = document.getElementById('badge-name-input')?.value.trim() || '';
-    const genderMode = document.getElementById('badge-gender-select')?.value || 'auto';
-    gameState.playerBadgeName = badgeName;
-    gameState.playerGender = ['auto', 'female', 'male'].includes(genderMode) ? genderMode : 'auto';
-    saveState();
-    renderSettingsTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
-    if (badgeName) {
-      const resolved = resolvePlayerGender(badgeName, gameState.playerGender);
-      showToast(`🏷️ Бейджик «${badgeName}» надет (${resolved === 'female' ? 'женский род' : 'мужской род'})!`);
-    } else {
-      showToast('🏷️ Бейджик снят');
-    }
-  });
+    container.innerHTML = `
+      ${headerHtml}
+      <div class="card">
+        <div class="card-title">🤖 Подключение ИИ для живых диалогов</div>
+        <p class="muted-text" style="font-size:12px;">${provMeta.hint}</p>
 
-  resetBtn.addEventListener('click', () => {
-    if (confirm('Точно сбросить весь прогресс магазина? Настройки API-ключа сохранятся.')) {
-      stopAmbient();
-      resetState();
-      window.location.reload();
-    }
-  });
-}
+        <div class="form-group">
+          <label class="form-label">Провайдер ИИ</label>
+          <select class="form-select" id="ai-provider-select">${providerOptions}</select>
+        </div>
 
-function renderAdminFooter(onHudUpdate, showToast) {
-  const footer = document.getElementById('finance-admin-footer');
-  if (!footer) return;
+        ${
+          provMeta.needsKey
+            ? `
+          <div class="form-group">
+            <label class="form-label">API-ключ</label>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input
+                type="text"
+                class="form-input ${showApiKey ? '' : 'masked-input'}"
+                id="ai-key-input"
+                name="fleur_ai_token"
+                autocomplete="off"
+                spellcheck="false"
+                value="${escapeAttr(aiSettings.apiKey)}"
+                placeholder="Вставь API-ключ..."
+                style="flex:1;"
+              />
+              <button class="btn btn-soft" id="btn-toggle-key-vis" type="button" title="Показать / скрыть ключ" style="padding:10px 11px;">
+                ${showApiKey ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+        `
+            : ''
+        }
 
-  let isUnlocked = false;
-  try {
-    isUnlocked = localStorage.getItem(ADMIN_UNLOCK_KEY) === '1';
-  } catch (e) {
-    isUnlocked = false;
-  }
+        <div class="form-group">
+          <label class="form-label">Базовый URL</label>
+          <input type="text" class="form-input" id="ai-url-input" autocomplete="off" value="${escapeAttr(aiSettings.baseUrl)}" placeholder="https://..." />
+        </div>
 
-  if (!isUnlocked) {
-    footer.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:center; gap:6px; opacity:0.7;">
-        <input
-          type="text"
-          class="form-input"
-          id="admin-secret-input"
-          autocomplete="off"
-          data-form-type="other"
-          data-lpignore="true"
-          placeholder="Служебная строка..."
-          style="padding:5px 9px; font-size:11px; max-width:165px;"
-        />
+        <div class="form-group">
+          <label class="form-label">Модель ИИ</label>
+          <input type="text" class="form-input" id="ai-model-input" autocomplete="off" value="${escapeAttr(aiSettings.model)}" placeholder="например gemini-2.5-flash" />
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" id="btn-save-ai" style="flex:1;">💾 Сохранить ИИ</button>
+          <button class="btn btn-sage" id="btn-test-ai" style="flex:1;" ${isTestingAi ? 'disabled' : ''}>
+            ${isTestingAi ? '⏳ Проверка...' : '⚡ Тест'}
+          </button>
+        </div>
+
+        ${
+          aiStatusMessage
+            ? `<div class="dm-order-banner ${aiStatusMessage.ok ? 'agreed' : 'cancelled'}" style="margin-top:4px;">
+                ${aiStatusMessage.ok ? '✅' : '⚠️'} ${escapeHtml(aiStatusMessage.text)}
+              </div>`
+            : ''
+        }
+      </div>
+
+      <div class="card">
+        <div class="card-title">📅 Дата и календарь в игре</div>
+        <p class="muted-text" style="font-size:12px;">Можешь переключить дату на любой сезон или праздник (например, 14 февраля или 8 марта).</p>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="date" class="form-input" id="game-date-input" value="${curIso}" style="flex:1;" />
+          <button class="btn btn-soft" id="btn-apply-date">Применить</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🛠️ Служебная строка</div>
+        <p class="muted-text" style="font-size:11.5px;">Введи служебный пароль (или сразу «admin 50000»), чтобы добавить деньги.</p>
+        <div style="display:flex; gap:6px;">
+          <input type="text" class="form-input" id="admin-cmd-input" autocomplete="off" spellcheck="false" placeholder="Пароль или команда..." style="flex:1;" />
+          <button class="btn btn-soft" id="btn-admin-run">Ввод</button>
+        </div>
+        ${
+          window._fleurAdminUnlocked
+            ? `<div style="display:flex; gap:6px; margin-top:4px;">
+                <input type="number" class="form-input" id="admin-money-amount" value="50000" min="1" style="flex:1;" />
+                <button class="btn btn-sage" id="btn-admin-add-money">+ Начислить ₽</button>
+              </div>`
+            : ''
+        }
+      </div>
+
+      <div class="card">
+        <div class="card-title">💾 Сохранение игры</div>
+        <p class="muted-text" style="font-size:11.5px;">При обновлении файлов игры старое сохранение не теряется. Можно также скачать резервную копию:</p>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-soft" id="btn-export-save" style="flex:1; font-size:12px;">💾 Скачать</button>
+          <button class="btn btn-soft" id="btn-import-save" style="flex:1; font-size:12px;">📥 Загрузить</button>
+          <input type="file" id="import-save-file" accept=".json" style="display:none;" />
+        </div>
+        <button class="btn btn-danger" id="btn-reset-game">🗑️ Начать игру заново</button>
       </div>
     `;
-    const input = document.getElementById('admin-secret-input');
-    const tryUnlockAdmin = () => {
-      if (input?.value.trim().toLowerCase() === 'admin') {
-        try {
-          localStorage.setItem(ADMIN_UNLOCK_KEY, '1');
-        } catch (e) {}
-        showToast('🔓 Панель баланса разблокирована!');
-        renderAdminFooter(onHudUpdate, showToast);
+
+    document.getElementById('ai-provider-select')?.addEventListener('change', (e) => {
+      const nextId = e.target.value;
+      const meta = AI_PROVIDERS[nextId] || AI_PROVIDERS.openrouter;
+      aiStatusMessage = null;
+      saveAiSettings({
+        provider: nextId,
+        baseUrl: meta.baseUrl,
+        model: meta.defaultModel
+      });
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+
+    function readFormAndSave() {
+      const keyInput = document.getElementById('ai-key-input');
+      const urlInput = document.getElementById('ai-url-input');
+      const modelInput = document.getElementById('ai-model-input');
+      saveAiSettings({
+        apiKey: keyInput ? keyInput.value.trim() : aiSettings.apiKey,
+        baseUrl: urlInput ? urlInput.value.trim() : aiSettings.baseUrl,
+        model: modelInput ? modelInput.value.trim() : aiSettings.model
+      });
+    }
+
+    document.getElementById('btn-toggle-key-vis')?.addEventListener('click', () => {
+      readFormAndSave();
+      showApiKey = !showApiKey;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+
+    document.getElementById('btn-save-ai')?.addEventListener('click', () => {
+      readFormAndSave();
+      aiStatusMessage = { ok: true, text: 'Настройки ИИ сохранены!' };
+      showToast('✅ Настройки ИИ сохранены!');
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+
+    document.getElementById('btn-test-ai')?.addEventListener('click', async () => {
+      readFormAndSave();
+      isTestingAi = true;
+      aiStatusMessage = null;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+      try {
+        const res = await testAiConnection();
+        if (res.ok) {
+          aiStatusMessage = { ok: true, text: `Успешно! Ответ ИИ: «${res.reply}»` };
+          showToast(`⚡ ИИ отвечает: «${res.reply}»`);
+        } else {
+          aiStatusMessage = { ok: false, text: res.error };
+          showToast('⚠️ ' + res.error);
+        }
+      } catch (err) {
+        aiStatusMessage = { ok: false, text: err.message };
+        showToast('⚠️ ' + err.message);
+      } finally {
+        isTestingAi = false;
+        renderFinanceSettingsScreen(onHudUpdate, showToast);
+      }
+    });
+
+    document.getElementById('btn-apply-date')?.addEventListener('click', () => {
+      const val = document.getElementById('game-date-input')?.value;
+      if (!val) return;
+      setCurrentGameDate(val);
+      onHudUpdate();
+      showToast('📅 Дата и сезон обновлены!');
+    });
+
+    const runAdminCmd = () => {
+      const raw = document.getElementById('admin-cmd-input')?.value.trim() || '';
+      const parts = raw.split(/\s+/);
+      if (parts[0].toLowerCase() === 'admin') {
+        window._fleurAdminUnlocked = true;
+        const quickSum = Number(parts[1]);
+        if (quickSum > 0) {
+          gameState.money += Math.round(quickSum);
+          saveState();
+          onHudUpdate();
+          showToast(`💰 Начислено +${Math.round(quickSum)} ₽!`);
+        } else {
+          showToast('🔓 Служебная панель открыта!');
+        }
+        renderFinanceSettingsScreen(onHudUpdate, showToast);
+      } else {
+        showToast('Неверный служебный пароль');
       }
     };
-    input?.addEventListener('input', tryUnlockAdmin);
-    input?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') tryUnlockAdmin();
+    document.getElementById('btn-admin-run')?.addEventListener('click', runAdminCmd);
+    document.getElementById('admin-cmd-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') runAdminCmd();
     });
-    return;
+
+    document.getElementById('btn-admin-add-money')?.addEventListener('click', () => {
+      const sum = Math.round(Number(document.getElementById('admin-money-amount')?.value) || 0);
+      if (sum <= 0) return;
+      gameState.money += sum;
+      saveState();
+      onHudUpdate();
+      showToast(`💰 В кассу добавлено +${sum} ₽!`);
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+
+    document.getElementById('btn-export-save')?.addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(gameState, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fleur-atelier-day-${gameState.day}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('💾 Файл сохранения скачан!');
+    });
+
+    document.getElementById('btn-import-save')?.addEventListener('click', () => {
+      document.getElementById('import-save-file')?.click();
+    });
+
+    document.getElementById('import-save-file')?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result));
+          Object.assign(gameState, parsed);
+          saveState();
+          onHudUpdate();
+          showToast('📥 Сохранение успешно загружено!');
+          renderFinanceSettingsScreen(onHudUpdate, showToast);
+        } catch (err) {
+          showToast('⚠️ Неверный файл сохранения');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById('btn-reset-game')?.addEventListener('click', () => {
+      const ok1 = confirm('Сбросить прогресс и начать цветочную лавку с 1-го дня?');
+      if (!ok1) return;
+      const ok2 = confirm('Точно удалить текущее сохранение? Настройки API-ключа при этом останутся.');
+      if (!ok2) return;
+      resetState();
+      onHudUpdate();
+      showToast('Новая игра началась!');
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
   }
 
-  footer.innerHTML = `
-    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-      <input
-        type="number"
-        class="form-input"
-        id="admin-money-input"
-        autocomplete="off"
-        data-form-type="other"
-        value="${gameState.money}"
-        placeholder="Сумма ₽..."
-        style="padding:5px 9px; font-size:12px; width:135px;"
-      />
-      <button class="btn btn-sage" id="btn-admin-apply-money" style="padding:5px 10px; font-size:11.5px;">
-        💰 Задать ₽
-      </button>
-    </div>
-  `;
-
-  const applyMoney = () => {
-    const val = Number(document.getElementById('admin-money-input')?.value);
-    if (Number.isNaN(val)) return;
-    gameState.money = Math.round(val);
-    gameState.rentWarning = gameState.money < 0;
-    saveState();
-    onHudUpdate();
-    if (currentSubTab === 'finance') {
-      renderFinanceTab(document.getElementById('finance-subtab-body'), onHudUpdate, showToast);
-    }
-    showToast(`💰 Баланс изменён: ${gameState.money.toLocaleString('ru-RU')} ₽`);
-  };
-
-  document.getElementById('btn-admin-apply-money')?.addEventListener('click', applyMoney);
-  document.getElementById('admin-money-input')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') applyMoney();
+  container.querySelectorAll('[data-fin-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeTab = btn.dataset.finTab;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
   });
 }
 
 function escapeHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeAttr(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return String(str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

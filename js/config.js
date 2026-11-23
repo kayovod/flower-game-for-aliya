@@ -1,663 +1,638 @@
 export const STORAGE_KEY = 'fleur_atelier_save_v1';
-export const AI_SETTINGS_KEY = 'fleur_atelier_ai_settings_v1';
+export const AI_SETTINGS_KEY = 'fleur_atelier_ai_v1';
 
-export const WEATHERS = [
-  { id: 'sunny', label: 'Солнечно', icon: '☀️' },
-  { id: 'rainy', label: 'Дождь', icon: '🌧️' },
-  { id: 'frost', label: 'Мороз', icon: '❄️' }
-];
-
-export const TIME_PERIODS = ['Утро', 'День', 'Вечер'];
-
-export const HOLIDAYS = [
-  { day: 7, name: 'День Влюблённых (14 Февраля)', demandMult: 3, priceMult: 2 },
-  { day: 14, name: 'Праздник Весны (8 Марта)', demandMult: 3, priceMult: 2 }
-];
+export const AI_PROVIDERS = {
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter (Рекомендуется)',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'baidu/ernie-5.5-flash-preview:free',
+    needsKey: true,
+    hint: 'Вставь ключ OpenRouter (sk-or-...). Бесплатные или быстрые модели работают сразу из браузера!'
+  },
+  puter: {
+    id: 'puter',
+    name: 'Puter AI (Без API-ключа)',
+    baseUrl: '',
+    defaultModel: 'gpt-4o-mini',
+    needsKey: false,
+    hint: 'Работает без API-ключа через Puter.js (вход через всплывающее окно Puter при первом запросе).'
+  },
+  groq: {
+    id: 'groq',
+    name: 'Groq (Очень быстрый)',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.1-8b-instant',
+    needsKey: true,
+    hint: 'Быстрый бесплатный API от Groq (ключ gsk_...).'
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini (Нативный API)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.5-flash',
+    needsKey: true,
+    hint: 'Ключ от Google AI Studio (AIza...). Используй gemini-2.5-flash или gemini-2.0-flash.'
+  },
+  mistral: {
+    id: 'mistral',
+    name: 'Mistral AI',
+    baseUrl: 'https://api.mistral.ai/v1',
+    defaultModel: 'mistral-small-latest',
+    needsKey: true,
+    hint: 'API-ключ от Mistral AI (console.mistral.ai).'
+  },
+  openai: {
+    id: 'openai',
+    name: 'OpenAI (ChatGPT)',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+    needsKey: true,
+    hint: 'Ключ от OpenAI (sk-...).'
+  },
+  custom: {
+    id: 'custom',
+    name: 'Свой OpenAI-совместимый URL',
+    baseUrl: '',
+    defaultModel: '',
+    needsKey: true,
+    hint: 'Любой прокси или локальный сервер с /chat/completions.'
+  }
+};
 
 export const FLOWERS_CATALOG = {
   rose_red: {
     id: 'rose_red',
     name: 'Красная роза',
-    shortName: 'Роза красн.',
-    color: 'красный',
+    shortName: 'Кр. роза',
     price: 220,
-    wholesalePrice: 110,
-    decayPerShift: 8,
-    vaseColor: '#EBD9CE'
+    wholesalePrice: 120,
+    decayPerShift: 12,
+    color: '#D95364',
+    accent: '#9E2B3B',
+    stemColor: '#5B875B',
+    shape: 'rose',
+    desc: 'Классика любви и ярких признаний'
   },
   rose_white: {
     id: 'rose_white',
     name: 'Белая роза',
-    shortName: 'Роза белая',
-    color: 'белый',
+    shortName: 'Бел. роза',
     price: 230,
-    wholesalePrice: 115,
-    decayPerShift: 8,
-    vaseColor: '#EAE6DF'
+    wholesalePrice: 125,
+    decayPerShift: 13,
+    color: '#FFFDF8',
+    accent: '#EADFD5',
+    stemColor: '#668E64',
+    shape: 'rose',
+    desc: 'Нежность для свадеб и чистых намерений'
   },
   rose_pink: {
     id: 'rose_pink',
     name: 'Розовая роза',
-    shortName: 'Роза розов.',
-    color: 'розовый',
+    shortName: 'Роз. роза',
     price: 225,
-    wholesalePrice: 110,
-    decayPerShift: 8,
-    vaseColor: '#F3E1E3'
+    wholesalePrice: 120,
+    decayPerShift: 12,
+    color: '#F29AA4',
+    accent: '#D46877',
+    stemColor: '#5D8A5D',
+    shape: 'rose',
+    desc: 'Романтичная и мягкая, как закат'
   },
   peony_pink: {
     id: 'peony_pink',
     name: 'Розовый пион',
-    shortName: 'Пион розов.',
-    color: 'розовый',
-    price: 320,
-    wholesalePrice: 165,
-    decayPerShift: 10,
-    vaseColor: '#DCE6DB'
-  },
-  peony_coral: {
-    id: 'peony_coral',
-    name: 'Коралловый пион',
-    shortName: 'Пион корал.',
-    color: 'коралловый',
+    shortName: 'Пион',
     price: 340,
-    wholesalePrice: 175,
-    decayPerShift: 10,
-    vaseColor: '#F5E2DA'
+    wholesalePrice: 190,
+    decayPerShift: 18,
+    color: '#F6B1BE',
+    accent: '#D87C8F',
+    stemColor: '#689365',
+    shape: 'peony',
+    desc: 'Пышный, ароматный и очень желанный цветок'
   },
   tulip_yellow: {
     id: 'tulip_yellow',
     name: 'Жёлтый тюльпан',
-    shortName: 'Тюльп. жёлт.',
-    color: 'жёлтый',
-    price: 160,
-    wholesalePrice: 75,
-    decayPerShift: 7,
-    vaseColor: '#E9DFCF'
-  },
-  tulip_red: {
-    id: 'tulip_red',
-    name: 'Красный тюльпан',
-    shortName: 'Тюльп. крас.',
-    color: 'красный',
-    price: 165,
+    shortName: 'Тюльпан',
+    price: 150,
     wholesalePrice: 80,
-    decayPerShift: 7,
-    vaseColor: '#EFE0DC'
-  },
-  tulip_purple: {
-    id: 'tulip_purple',
-    name: 'Сиреневый тюльпан',
-    shortName: 'Тюльп. сир.',
-    color: 'сиреневый',
-    price: 175,
-    wholesalePrice: 85,
-    decayPerShift: 7,
-    vaseColor: '#E5DFEE'
-  },
-  hydrangea_blue: {
-    id: 'hydrangea_blue',
-    name: 'Голубая гортензия',
-    shortName: 'Гортензия',
-    color: 'голубой',
-    price: 360,
-    wholesalePrice: 185,
-    decayPerShift: 9,
-    vaseColor: '#DCE7EF'
-  },
-  sunflower: {
-    id: 'sunflower',
-    name: 'Подсолнух',
-    shortName: 'Подсолнух',
-    color: 'жёлтый',
-    price: 210,
-    wholesalePrice: 100,
-    decayPerShift: 6,
-    vaseColor: '#EDE6D1'
+    decayPerShift: 15,
+    color: '#F6CA51',
+    accent: '#D9A023',
+    stemColor: '#72A263',
+    shape: 'tulip',
+    desc: 'Весеннее солнце в ладонях, дарит улыбку'
   },
   chamomile_white: {
     id: 'chamomile_white',
-    name: 'Ромашка',
+    name: 'Полевая ромашка',
     shortName: 'Ромашка',
-    color: 'белый',
     price: 120,
-    wholesalePrice: 55,
-    decayPerShift: 6,
-    vaseColor: '#F3DFDC'
+    wholesalePrice: 60,
+    decayPerShift: 14,
+    color: '#FFFFFF',
+    accent: '#F0BD43',
+    stemColor: '#76A469',
+    shape: 'daisy',
+    desc: 'Искренняя, уютная и лёгкая полевая радость'
   },
   lavender_purple: {
     id: 'lavender_purple',
-    name: 'Лаванда',
+    name: 'Веточка лаванды',
     shortName: 'Лаванда',
-    color: 'сиреневый',
-    price: 190,
+    price: 170,
     wholesalePrice: 90,
-    decayPerShift: 3,
-    vaseColor: '#DFD9EA'
+    decayPerShift: 6,
+    color: '#A78CC9',
+    accent: '#7D60A6',
+    stemColor: '#789A7B',
+    shape: 'lavender',
+    desc: 'Долго хранится и наполняет комнату Провансом'
   },
   lily_white: {
     id: 'lily_white',
     name: 'Белая лилия',
     shortName: 'Лилия',
-    color: 'белый',
-    price: 280,
-    wholesalePrice: 145,
-    decayPerShift: 8,
-    vaseColor: '#D6E4EA'
+    price: 310,
+    wholesalePrice: 170,
+    decayPerShift: 14,
+    color: '#FFFBF3',
+    accent: '#E9C66B',
+    stemColor: '#5B845B',
+    shape: 'lily',
+    desc: 'Торжественная, изящная, с сильным ароматом'
   },
-  iris_blue: {
-    id: 'iris_blue',
-    name: 'Синий ирис',
-    shortName: 'Ирис',
-    color: 'синий',
-    price: 185,
-    wholesalePrice: 90,
-    decayPerShift: 7,
-    vaseColor: '#DFE4EE'
+  sunflower: {
+    id: 'sunflower',
+    name: 'Подсолнух',
+    shortName: 'Подсолнух',
+    price: 210,
+    wholesalePrice: 110,
+    decayPerShift: 11,
+    color: '#F7BD31',
+    accent: '#63432D',
+    stemColor: '#679256',
+    shape: 'sunflower',
+    desc: 'Маленькое солнце, заряжающее энергией'
   },
-  chrysanthemum_white: {
-    id: 'chrysanthemum_white',
-    name: 'Белая хризантема',
-    shortName: 'Хризантема',
-    color: 'белый',
-    price: 180,
-    wholesalePrice: 85,
-    decayPerShift: 5,
-    vaseColor: '#EBE6DF'
+  orchid_purple: {
+    id: 'orchid_purple',
+    name: 'Сиреневая орхидея',
+    shortName: 'Орхидея',
+    price: 390,
+    wholesalePrice: 220,
+    decayPerShift: 10,
+    color: '#D58CD4',
+    accent: '#9E4B9E',
+    stemColor: '#638E63',
+    shape: 'orchid',
+    desc: 'Экзотический акцент для особых случаев'
   },
-  carnation_red: {
-    id: 'carnation_red',
-    name: 'Красная гвоздика',
-    shortName: 'Гвоздика',
-    color: 'красный',
-    price: 140,
-    wholesalePrice: 65,
-    decayPerShift: 5,
-    vaseColor: '#EADAD9'
+  hydrangea_blue: {
+    id: 'hydrangea_blue',
+    name: 'Голубая гортензия',
+    shortName: 'Гортензия',
+    price: 420,
+    wholesalePrice: 240,
+    decayPerShift: 19,
+    color: '#93BEEB',
+    accent: '#6290C8',
+    stemColor: '#618C62',
+    shape: 'hydrangea',
+    desc: 'Воздушное облако лепестков, но любит воду'
   },
   gypsophila: {
     id: 'gypsophila',
     name: 'Гипсофила',
     shortName: 'Гипсофила',
-    color: 'белый',
-    price: 140,
+    price: 130,
     wholesalePrice: 65,
-    decayPerShift: 4,
-    vaseColor: '#E8EAE6'
+    decayPerShift: 7,
+    color: '#FFFFFF',
+    accent: '#E9DFD6',
+    stemColor: '#7CA37B',
+    shape: 'gypsophila',
+    desc: 'Воздушная дымка, делающая любой букет нежнее'
   },
   eucalyptus: {
     id: 'eucalyptus',
-    name: 'Веточка эвкалипта',
+    name: 'Ветка эвкалипта',
     shortName: 'Эвкалипт',
-    color: 'зелёный',
-    price: 130,
-    wholesalePrice: 60,
-    decayPerShift: 3,
-    vaseColor: '#DCE5DD'
+    price: 140,
+    wholesalePrice: 70,
+    decayPerShift: 5,
+    color: '#88AE8E',
+    accent: '#5E8667',
+    stemColor: '#64896A',
+    shape: 'eucalyptus',
+    desc: 'Стильная зелень со свежим ароматом'
   }
 };
-
-export const AI_PROVIDERS = {
-  offline: {
-    id: 'offline',
-    name: '⚡ Встроенный ИИ-движок (Без ключа, мгновенно)',
-    needsKey: false,
-    defaultBaseUrl: '',
-    defaultModel: 'local-florist-v1'
-  },
-  mistral: {
-    id: 'mistral',
-    name: 'Mistral AI (Бесплатно без карты, быстрый)',
-    needsKey: true,
-    defaultBaseUrl: 'https://api.mistral.ai/v1',
-    defaultModel: 'mistral-small-latest'
-  },
-  openrouter: {
-    id: 'openrouter',
-    name: 'OpenRouter (Бесплатные модели)',
-    needsKey: true,
-    defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'baidu/ernie-5.5-flash-preview:free'
-  },
-  gemini: {
-    id: 'gemini',
-    name: 'Google Gemini (Бесплатно, без карты)',
-    needsKey: true,
-    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash'
-  },
-  groq: {
-    id: 'groq',
-    name: 'Groq (Бесплатно, без карты)',
-    needsKey: true,
-    defaultBaseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.3-70b-versatile'
-  },
-  deepseek: {
-    id: 'deepseek',
-    name: 'DeepSeek API',
-    needsKey: true,
-    defaultBaseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat'
-  },
-  openai: {
-    id: 'openai',
-    name: 'OpenAI (ChatGPT API)',
-    needsKey: true,
-    defaultBaseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini'
-  },
-  claude: {
-    id: 'claude',
-    name: 'Anthropic Claude API',
-    needsKey: true,
-    defaultBaseUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-3-5-haiku-latest'
-  },
-  custom: {
-    id: 'custom',
-    name: 'Свой OpenAI-совместимый API',
-    needsKey: true,
-    defaultBaseUrl: '',
-    defaultModel: ''
-  }
-};
-
-export const WRAPPINGS = [
-  { id: 'none', name: 'Без упаковки', type: 'none', price: 0, color: 'transparent', accent: 'transparent' },
-  { id: 'clear_film', name: 'Прозрачная плёнка', type: 'clear', price: 50, color: 'rgba(255,255,255,0.35)', accent: 'rgba(205,228,238,0.85)' },
-  { id: 'craft', name: 'Крафт-бумага', type: 'paper', price: 60, color: '#D9B99B', accent: '#C49F7E' },
-  { id: 'newspaper', name: 'Винтажная газета', type: 'newspaper', price: 75, color: '#EDE4D3', accent: '#D5C7B2' },
-  { id: 'pink_film', name: 'Пудровая матовая', type: 'paper', price: 90, color: '#F5CBD0', accent: '#E8A9B2' },
-  { id: 'sage_paper', name: 'Шалфейная бумага', type: 'paper', price: 100, color: '#C6D8C5', accent: '#A6BEA5' },
-  { id: 'cream_paper', name: 'Молочный шёлк', type: 'paper', price: 95, color: '#F7F0E4', accent: '#E4D8C3' },
-  { id: 'sky_film', name: 'Небесно-голубая', type: 'paper', price: 95, color: '#C8DFEE', accent: '#A7C6DC' },
-  { id: 'lavender_film', name: 'Лавандовая калька', type: 'paper', price: 105, color: '#DFD2EB', accent: '#C5B3D6' },
-  { id: 'peach_paper', name: 'Персиковая калька', type: 'paper', price: 100, color: '#F6D3BA', accent: '#E5B99A' },
-  { id: 'black_matte', name: 'Чёрная премиум', type: 'paper', price: 130, color: '#454144', accent: '#2E2B2D' },
-  { id: 'gold_mesh', name: 'Золотая сетка', type: 'mesh', price: 120, color: '#F2DDA8', accent: '#DFAB4E' }
-];
-
-export const RIBBONS = [
-  { id: 'none', name: 'Без ленты', price: 0, color: 'transparent' },
-  { id: 'twine', name: 'Бечёвка', price: 20, color: '#A88C72' },
-  { id: 'cream', name: 'Кремовая', price: 40, color: '#EFE3CF' },
-  { id: 'satin_rose', name: 'Розовая', price: 45, color: '#E07A86' },
-  { id: 'crimson', name: 'Алая атласная', price: 50, color: '#C94C58' },
-  { id: 'burgundy', name: 'Бордовый бархат', price: 65, color: '#8A3346' },
-  { id: 'sage', name: 'Мятно-шалфейная', price: 45, color: '#7D9E7F' },
-  { id: 'sky', name: 'Небесная', price: 45, color: '#7EA8C9' },
-  { id: 'lavender', name: 'Лавандовая', price: 50, color: '#9E85BD' },
-  { id: 'sunny', name: 'Солнечная', price: 45, color: '#E8BC4A' },
-  { id: 'choco', name: 'Шоколадная', price: 50, color: '#6E4E3E' },
-  { id: 'black', name: 'Чёрная атласная', price: 55, color: '#332E30' },
-  { id: 'gold', name: 'Золотая', price: 60, color: '#DFAB4E' }
-];
 
 export const ACCESSORIES_CATALOG = {
   balloon_heart: {
     id: 'balloon_heart',
-    name: 'Гелиевый шар «Сердце»',
-    shortName: 'Шар «Сердце»',
+    name: 'Шар-сердце «Люблю»',
+    shortName: 'Шар-сердце',
+    category: 'Воздушный шар',
     icon: '🎈',
-    category: 'шарик',
-    price: 290,
-    wholesalePrice: 140
+    wholesalePrice: 90,
+    price: 190,
+    desc: 'Фольгированный пастельный шар в форме сердца'
   },
-  balloon_star: {
-    id: 'balloon_star',
-    name: 'Гелиевый шар «Звезда»',
-    shortName: 'Шар «Звезда»',
-    icon: '🌟',
-    category: 'шарик',
-    price: 270,
-    wholesalePrice: 130
+  balloon_set: {
+    id: 'balloon_set',
+    name: 'Связка 3 шаров пастель',
+    shortName: 'Связка шаров',
+    category: 'Воздушные шары',
+    icon: '🎉',
+    wholesalePrice: 170,
+    price: 340,
+    desc: 'Воздушное облако кремовых и пудровых шариков'
   },
   plush_bear: {
     id: 'plush_bear',
-    name: 'Плюшевый мишка',
-    shortName: 'Мишка',
+    name: 'Плюшевый мишка Тоффи',
+    shortName: 'Мишка Тоффи',
+    category: 'Мягкая игрушка',
     icon: '🧸',
-    category: 'игрушка',
-    price: 850,
-    wholesalePrice: 420
+    wholesalePrice: 260,
+    price: 520,
+    desc: 'Мягкий карамельный мишка с атласным бантиком'
   },
   plush_bunny: {
     id: 'plush_bunny',
-    name: 'Плюшевый зайка',
-    shortName: 'Зайка',
+    name: 'Зайка в вязаном шарфе',
+    shortName: 'Зайка в шарфе',
+    category: 'Мягкая игрушка',
     icon: '🐰',
-    category: 'игрушка',
-    price: 790,
-    wholesalePrice: 390
+    wholesalePrice: 280,
+    price: 560,
+    desc: 'Уютный плюшевый зайчик к нежному букету'
   },
-  choco_box: {
-    id: 'choco_box',
-    name: 'Коробка конфет ассорти',
+  chocolates_box: {
+    id: 'chocolates_box',
+    name: 'Конфеты ручной работы',
     shortName: 'Конфеты',
+    category: 'Сладости',
     icon: '🍫',
-    category: 'конфеты',
-    price: 580,
-    wholesalePrice: 280
+    wholesalePrice: 220,
+    price: 450,
+    desc: 'Бельгийский трюфель и пралине в подарочной коробке'
   },
-  postcard: {
-    id: 'postcard',
-    name: 'Открытка с пожеланием',
+  macarons_box: {
+    id: 'macarons_box',
+    name: 'Коробочка макаронс (6 шт.)',
+    shortName: 'Макаронс',
+    category: 'Сладости',
+    icon: '🧁',
+    wholesalePrice: 240,
+    price: 490,
+    desc: 'Малиновые и фисташковые пирожные к цветам'
+  },
+  greeting_card: {
+    id: 'greeting_card',
+    name: 'Дизайнерская открытка',
     shortName: 'Открытка',
+    category: 'Открытка',
     icon: '💌',
-    category: 'открытка',
-    price: 150,
-    wholesalePrice: 60
+    wholesalePrice: 40,
+    price: 110,
+    desc: 'Плотный хлопок и каллиграфия для тёплых слов'
   }
 };
 
+export const WRAPPINGS = [
+  { id: 'craft', name: 'Крафт-бумага', price: 60, color: '#D7BA98', accent: '#BD9B75' },
+  { id: 'pink_film', name: 'Пудровая плёнка', price: 90, color: '#F3C6CD', accent: '#DF9FA9' },
+  { id: 'sage_paper', name: 'Шалфейная бумага', price: 85, color: '#C5D9C4', accent: '#9AB79A' },
+  { id: 'cream_paper', name: 'Кремовая тишью', price: 95, color: '#FAF0E2', accent: '#E5D3BA' },
+  { id: 'newsprint', name: 'Газетный винтаж', price: 75, color: '#E8DFD1', accent: '#C6B9A6' },
+  { id: 'none', name: 'Без упаковки', price: 0, color: 'transparent', accent: 'transparent' }
+];
+
+export const RIBBONS = [
+  { id: 'satin_rose', name: 'Пыльная роза', price: 35, color: '#D98A7C' },
+  { id: 'sage', name: 'Оливковая лента', price: 35, color: '#7D9E7F' },
+  { id: 'cream', name: 'Молочный шёлк', price: 45, color: '#EFE5D5' },
+  { id: 'twine', name: 'Джутовый шпагат', price: 20, color: '#B4926B' },
+  { id: 'none', name: 'Без ленты', price: 0, color: 'transparent' }
+];
+
+export const TIME_PERIODS = ['Утро', 'День', 'Вечер'];
+
 export const INSTA_HASHTAGS = [
   '#флористика',
-  '#авторскийбукет',
   '#уютнаялавка',
-  '#цветыдня',
-  '#розы',
-  '#подароксдушой',
-  '#скидки'
+  '#свежиецветы',
+  '#букетдня',
+  '#цветыназаказ',
+  '#доставкацветов',
+  '#подароклюбимым',
+  '#нежность'
 ];
 
 export const DECOR_CATALOG = [
   {
     id: 'fridge',
-    name: 'Холодильная витрина',
+    name: 'Цветочный холодильник',
     place: 'Магазин',
-    category: 'Обычный',
+    category: 'Оборудование',
     icon: '❄️',
-    price: 1900,
-    effectText: 'Цветы вянут на 35% медленнее!',
+    price: 2200,
+    effectText: 'Цветы вянут на 35% медленнее',
     moodBonus: 8
   },
   {
-    id: 'neon_sign',
-    name: 'Тёплая вывеска «Fleur»',
+    id: 'garland',
+    name: 'Тёплая гирлянда',
     place: 'Магазин',
     category: 'Обычный',
     icon: '✨',
-    price: 750,
-    effectText: '+6% к атмосфере и красивее фото витрины',
-    moodBonus: 6
-  },
-  {
-    id: 'vintage_wallpaper',
-    name: 'Винтажные обои',
-    place: 'Магазин',
-    category: 'Обычный',
-    icon: '🖼️',
-    price: 650,
-    effectText: '+5% к уюту магазина',
-    moodBonus: 5
-  },
-  {
-    id: 'shop_arch',
-    name: 'Цветочная арка с плющом',
-    place: 'Магазин',
-    category: 'Обычный',
-    icon: '🌿',
-    price: 890,
-    effectText: 'Зелёные ветки над прилавком (+6% атмосферы)',
-    moodBonus: 6
-  },
-  {
-    id: 'shop_mirror',
-    name: 'Винтажное зеркало',
-    place: 'Магазин',
-    category: 'Обычный',
-    icon: '💎',
-    price: 480,
-    effectText: 'Зрительно расширяет зал (+4% атмосферы)',
-    moodBonus: 4
-  },
-  {
-    id: 'shop_chalkboard',
-    name: 'Меловая доска «Букет дня»',
-    place: 'Магазин',
-    category: 'Обычный',
-    icon: '📋',
-    price: 420,
-    effectText: 'Стильная табличка у витрины (+4% атмосферы)',
-    moodBonus: 4
-  },
-  {
-    id: 'xmas_tree_shop',
-    name: 'Новогодняя ёлка в зал',
-    place: 'Магазин',
-    category: 'Праздник',
-    icon: '🎄',
-    price: 950,
-    effectText: 'Нарядная ёлочка с шарами (+7% атмосферы)',
-    moodBonus: 7
-  },
-  {
-    id: 'wreath_shop',
-    name: 'Праздничный венок на стену',
-    place: 'Магазин',
-    category: 'Сезон',
-    icon: '🎀',
     price: 450,
-    effectText: 'Венок с лентами и шишками (+4% атмосферы)',
-    moodBonus: 4
-  },
-  {
-    id: 'hearts_garland_shop',
-    name: 'Гирлянда из сердечек',
-    place: 'Магазин',
-    category: 'Праздник',
-    icon: '💕',
-    price: 390,
-    effectText: 'Романтичное настроение ко Дню Влюблённых (+5%)',
+    effectText: '+5% атмосферы и огонёк уюта',
     moodBonus: 5
   },
   {
-    id: 'pumpkins_shop',
-    name: 'Осенние тыквы на полку',
+    id: 'neon_sign',
+    name: 'Вывеска для лавки',
     place: 'Магазин',
-    category: 'Сезон',
-    icon: '🎃',
-    price: 460,
-    effectText: 'Тёплый осенний акцент в зале (+5% атмосферы)',
-    moodBonus: 5
-  },
-  {
-    id: 'cozy_lamp',
-    name: 'Тёплый торшер',
-    place: 'Квартира',
     category: 'Обычный',
-    icon: '🛋️',
-    price: 550,
-    effectText: 'Мягкое освещение дома (+4% к атмосфере)',
-    moodBonus: 4
+    icon: '✨',
+    price: 850,
+    effectText: 'Привлекает внимание прохожих (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'wallpaper',
+    name: 'Уютные обои в цветок',
+    place: 'Магазин',
+    category: 'Обычный',
+    icon: '🌸',
+    price: 680,
+    effectText: 'Стены зала становятся светлее (+5%)',
+    moodBonus: 5
   },
   {
     id: 'cat_bed',
-    name: 'Лежанка с игрушкой',
+    name: 'Лежанка для Пискли',
     place: 'Квартира',
-    category: 'Обычный',
-    icon: '🧶',
-    price: 600,
-    effectText: 'Любимое место для кошки (+5% к атмосфере)',
-    moodBonus: 5
-  },
-  {
-    id: 'cat_ball',
-    name: 'Мячик для кошки',
-    place: 'Квартира',
-    category: 'Обычный',
-    icon: '🎾',
-    price: 320,
-    effectText: 'Кошка весело гоняет мячик по комнате (+4% атмосферы)',
+    category: 'Питомец',
+    icon: '🛏️',
+    price: 550,
+    effectText: 'Кошка спит слаще (+8% энергии при сне)',
     moodBonus: 4
   },
   {
-    id: 'bookshelf',
-    name: 'Полка с книгами по ботанике',
+    id: 'cat_ball',
+    name: 'Мячик для Пискли',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '🧶',
+    price: 250,
+    effectText: 'Игрушка на полу: нажми, чтобы Пискля побежала!',
+    moodBonus: 4
+  },
+  {
+    id: 'cat_tower',
+    name: 'Домик-когтеточка для кошки',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '🏰',
+    price: 1100,
+    effectText: 'Высокий мягкий игровой комплекс у стены',
+    moodBonus: 7
+  },
+  {
+    id: 'floor_lamp',
+    name: 'Торшер с тёплым светом',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '📚',
-    price: 820,
-    effectText: 'Вдохновение и +5% к атмосфере',
+    icon: '🛋️',
+    price: 750,
+    effectText: 'Тёплое свечение в комнате по вечерам',
     moodBonus: 5
   },
   {
     id: 'home_sofa',
-    name: 'Пастельный диванчик',
+    name: 'Уютный плюшевый диван',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '🪑',
-    price: 1100,
-    effectText: 'Уютная мебель для отдыха дома (+7% атмосферы)',
+    icon: '🛋️',
+    price: 1400,
+    effectText: 'Мягкий диван с подушками в комнате (+7%)',
     moodBonus: 7
   },
   {
     id: 'home_rug',
-    name: 'Мягкий круглый коврик',
+    name: 'Мягкий пудровый коврик',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '⭕',
-    price: 450,
-    effectText: 'Тёплый коврик под лапки Пискли (+4% атмосферы)',
-    moodBonus: 4
-  },
-  {
-    id: 'home_plant',
-    name: 'Фикус в кашпо',
-    place: 'Квартира',
-    category: 'Обычный',
-    icon: '🌱',
+    icon: '🧶',
     price: 520,
-    effectText: 'Живая зелень дома (+5% атмосферы)',
-    moodBonus: 5
+    effectText: 'Тёплый круглый коврик в центре комнаты',
+    moodBonus: 4
   },
   {
     id: 'home_curtains',
-    name: 'Кружевные шторы на окно',
+    name: 'Кружевные шторы',
     place: 'Квартира',
     category: 'Обычный',
-    icon: '🎐',
+    icon: '🎀',
     price: 490,
-    effectText: 'Воздушные занавески у окна (+4% атмосферы)',
+    effectText: 'Нежные занавески на окне дома',
     moodBonus: 4
   },
   {
-    id: 'xmas_tree_home',
-    name: 'Домашняя ёлка с огоньками',
+    id: 'home_bookshelf',
+    name: 'Книжная полка с плющом',
     place: 'Квартира',
-    category: 'Праздник',
-    icon: '🎄',
-    price: 920,
-    effectText: 'Волшебный новогодний уют дома (+7% атмосферы)',
-    moodBonus: 7
-  },
-  {
-    id: 'fairy_lights_home',
-    name: 'Гирлянда-штора дома',
-    place: 'Квартира',
-    category: 'Праздник',
-    icon: '🌟',
-    price: 440,
-    effectText: 'Тёплые огоньки под потолком (+5% атмосферы)',
+    category: 'Обычный',
+    icon: '📚',
+    price: 680,
+    effectText: 'Ботанические атласы и свисающий плющ',
     moodBonus: 5
   },
   {
-    id: 'pumpkins_home',
-    name: 'Осенние тыквы и свечи',
+    id: 'home_plant',
+    name: 'Фикус в керамическом кашпо',
     place: 'Квартира',
-    category: 'Сезон',
-    icon: '🎃',
-    price: 410,
-    effectText: 'Осенний декор для уюта дома (+4% атмосферы)',
-    moodBonus: 4
+    category: 'Обычный',
+    icon: '🌿',
+    price: 590,
+    effectText: 'Большое живое растение в углу комнаты',
+    moodBonus: 5
   },
   {
-    id: 'heart_pillow_home',
-    name: 'Декор из сердечек',
+    id: 'home_fairy_lights',
+    name: 'Гирлянда-штора дома',
     place: 'Квартира',
-    category: 'Праздник',
-    icon: '💖',
-    price: 360,
-    effectText: 'Романтичное украшение комнаты (+4% атмосферы)',
-    moodBonus: 4
+    category: 'Обычный',
+    icon: '✨',
+    price: 620,
+    effectText: 'Мягкие огонёчки под потолком квартиры',
+    moodBonus: 5
   },
   {
-    id: 'vintage_vase',
-    name: 'Антикварная фарфоровая ваза',
+    id: 'shop_arch',
+    name: 'Цветочная арка у входа',
     place: 'Магазин',
-    category: 'Антиквариат',
-    isRare: true,
-    icon: '🏺',
-    price: 1350,
-    effectText: 'Редкий фарфор ручной росписи (+7% атмосферы)',
+    category: 'Обычный',
+    icon: '🌿',
+    price: 920,
+    effectText: 'Роскошная зелёная арка над прилавком (+7%)',
     moodBonus: 7
   },
   {
-    id: 'retro_gramophone',
-    name: 'Ретро-граммофон',
+    id: 'shop_pumpkins',
+    name: 'Декоративные тыковки (Осень)',
+    place: 'Магазин',
+    category: 'Сезонный',
+    icon: '🎃',
+    price: 380,
+    effectText: 'Осенний уют на деревянной полке (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'shop_xmas_tree',
+    name: 'Нарядная ёлочка (Зима)',
+    place: 'Магазин',
+    category: 'Сезонный',
+    icon: '🎄',
+    price: 890,
+    effectText: 'Зимнее волшебство в лавке (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'shop_hearts',
+    name: 'Гирлянда из сердечек (Праздники)',
+    place: 'Магазин',
+    category: 'Сезонный',
+    icon: '💕',
+    price: 420,
+    effectText: 'Романтичное украшение для особых дат (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'home_pumpkins',
+    name: 'Осенний декор (тыковки дома)',
+    place: 'Квартира',
+    category: 'Сезонный',
+    icon: '🍂',
+    price: 340,
+    effectText: 'Тёплая осенняя композиция на полу',
+    moodBonus: 4
+  },
+  {
+    id: 'home_xmas_tree',
+    name: 'Домашняя мини-ёлка с гирляндой',
+    place: 'Квартира',
+    category: 'Сезонный',
+    icon: '🎄',
+    price: 790,
+    effectText: 'Новогодний огонёк для тебя и Пискли',
+    moodBonus: 6
+  },
+  {
+    id: 'home_hearts',
+    name: 'Сердечки-подвески дома',
+    place: 'Квартира',
+    category: 'Сезонный',
+    icon: '💖',
+    price: 350,
+    effectText: 'Милые сердечки на стене комнаты',
+    moodBonus: 4
+  },
+  {
+    id: 'vintage_gramophone',
+    name: 'Винтажный граммофон',
     place: 'Магазин',
     category: 'Антиквариат',
     isRare: true,
     icon: '📻',
-    price: 2200,
-    effectText: 'Винтажный шарм в зале (+9% атмосферы)',
-    moodBonus: 9
+    price: 1650,
+    effectText: 'Редкий антикварный шарм (+8% атмосферы)',
+    moodBonus: 8
+  },
+  {
+    id: 'crystal_vase_rare',
+    name: 'Хрустальная ваза XIX века',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🏺',
+    price: 1450,
+    effectText: 'Роскошный антиквариат на полке (+7%)',
+    moodBonus: 7
   },
   {
     id: 'gold_frame_art',
-    name: 'Картина в золотой раме',
+    name: 'Картина с пионами в золотой раме',
     place: 'Магазин',
     category: 'Антиквариат',
     isRare: true,
     icon: '🖼️',
-    price: 1650,
-    effectText: 'Ботанический натюрморт XIX века (+7% атмосферы)',
+    price: 1350,
+    effectText: 'Настоящее масло на стене лавки (+7%)',
     moodBonus: 7
   },
   {
-    id: 'marble_pedestal',
-    name: 'Мраморная тумба с кашпо',
+    id: 'antique_cashbox',
+    name: 'Медный винтажный кассовый аппарат',
     place: 'Магазин',
     category: 'Антиквариат',
     isRare: true,
-    icon: '🏛️',
+    icon: '🗝️',
     price: 1900,
-    effectText: 'Роскошная подставка под букеты (+8% атмосферы)',
+    effectText: 'Гордость прилавка и удача в торгах (+8%)',
     moodBonus: 8
   },
   {
-    id: 'designer_lamp',
-    name: 'Дизайнерский витражный торшер',
+    id: 'porcelain_swan',
+    name: 'Фарфоровый лебедь',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🦢',
+    price: 1200,
+    effectText: 'Хрупкая коллекционная статуэтка (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'tiffany_lamp_rare',
+    name: 'Витражная лампа Тиффани',
     place: 'Квартира',
     category: 'Антиквариат',
     isRare: true,
     icon: '🪔',
+    price: 1750,
+    effectText: 'Цветные отблески на стенах комнаты (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'vintage_mirror',
+    name: 'Резное трюмо с зеркалом',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '✨',
     price: 1600,
-    effectText: 'Тёплое мозаичное свечение дома (+7% атмосферы)',
+    effectText: 'Антикварное зеркало дома (+7% атмосферы)',
     moodBonus: 7
   },
   {
-    id: 'cat_tower',
-    name: 'Большой кошачий городок',
+    id: 'music_box_rare',
+    name: 'Музыкальная шкатулка с балериной',
     place: 'Квартира',
     category: 'Антиквариат',
     isRare: true,
-    icon: '🏰',
-    price: 2400,
-    effectText: 'Многоуровневый комплекс для Пискли (+9% атмосферы)',
-    moodBonus: 9
-  },
-  {
-    id: 'antique_dresser',
-    name: 'Старинное трюмо с зеркалом',
-    place: 'Квартира',
-    category: 'Антиквариат',
-    isRare: true,
-    icon: '🪞',
-    price: 1850,
-    effectText: 'Уютная винтажная мебель для комнаты (+7% атмосферы)',
-    moodBonus: 7
+    icon: '🎼',
+    price: 1300,
+    effectText: 'Убаюкивающая мелодия перед сном (+6%)',
+    moodBonus: 6
   },
   {
     id: 'botanical_vinyl',
@@ -669,6 +644,419 @@ export const DECOR_CATALOG = [
     price: 1500,
     effectText: 'Тёплый винил вечерами (+6% атмосферы)',
     moodBonus: 6
+  },
+  // --- Новый декор для Магазина ---
+  {
+    id: 'dried_flowers_bundle',
+    name: 'Связка сухоцветов под потолок',
+    place: 'Магазин',
+    category: 'Прованс',
+    icon: '🌾',
+    price: 540,
+    effectText: 'Лаванда, лагурус и злаки на балке (+5% атмосферы)',
+    moodBonus: 5
+  },
+  {
+    id: 'birdcage_decor',
+    name: 'Ажурная клетка со свечами',
+    place: 'Магазин',
+    category: 'Винтаж',
+    icon: '🕊️',
+    price: 780,
+    effectText: 'Романтичная винтажная клетка с огоньком (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'brass_scales',
+    name: 'Латунные старинные весы',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '⚖️',
+    price: 1290,
+    effectText: 'Декоративные весы на прилавок (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'cafe_bistro_table',
+    name: 'Кофейный столик для гостей',
+    place: 'Магазин',
+    category: 'Уют',
+    icon: '☕',
+    price: 1150,
+    effectText: 'Пока букет собирается, гости отдыхают (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'watering_can_copper',
+    name: 'Медная винтажная лейка',
+    place: 'Магазин',
+    category: 'Флористика',
+    icon: '🚿',
+    price: 490,
+    effectText: 'Блестящая рабочая лейка на полке (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'wall_clock_retro',
+    name: 'Вокзальные резные часы',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🕰️',
+    price: 1420,
+    effectText: 'Тёплое тиканье старинных часов (+7% атмосферы)',
+    moodBonus: 7
+  },
+  {
+    id: 'stained_glass_sun',
+    name: 'Витражный ловец солнца',
+    place: 'Магазин',
+    category: 'Декор',
+    icon: '🌈',
+    price: 620,
+    effectText: 'Разноцветные солнечные зайчики по залу (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'terracotta_shelf',
+    name: 'Этажерка с суккулентами',
+    place: 'Магазин',
+    category: 'Ботаника',
+    icon: '🌵',
+    price: 840,
+    effectText: 'Мини-кактусы в глиняных горшочках (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'macrame_hanger',
+    name: 'Макраме-кашпо с папоротником',
+    place: 'Магазин',
+    category: 'Бохо',
+    icon: '🪢',
+    price: 580,
+    effectText: 'Плетёный подвес с пышной зеленью (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'open_closed_sign',
+    name: 'Резная табличка «Рады гостям»',
+    place: 'Магазин',
+    category: 'Уют',
+    icon: '🪧',
+    price: 410,
+    effectText: 'Деревянная вывеска с цветочным узором (+4%)',
+    moodBonus: 4
+  },
+  // --- Новый декор для Квартиры ---
+  {
+    id: 'cat_fountain',
+    name: 'Питьевой фонтанчик для кошки',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '⛲',
+    price: 890,
+    effectText: 'Свежая журчащая водичка для Пискли (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'tea_tray_home',
+    name: 'Поднос с чаем и круассаном',
+    place: 'Квартира',
+    category: 'Уют',
+    icon: '🥐',
+    price: 460,
+    effectText: 'Уютный вечерний перекус дома (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'star_projector',
+    name: 'Ночник-проектор звёздного неба',
+    place: 'Квартира',
+    category: 'Атмосфера',
+    icon: '🌌',
+    price: 980,
+    effectText: 'Мягкое сияние звёздочек под потолком (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'wall_tapestry',
+    name: 'Тканый гобелен с лугами',
+    place: 'Квартира',
+    category: 'Бохо',
+    icon: '🧶',
+    price: 760,
+    effectText: 'Ботанический гобелен ручной работы (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'aquarium_home',
+    name: 'Круглый аквариум с рыбкой',
+    place: 'Квартира',
+    category: 'Живой уголок',
+    isRare: true,
+    icon: '🐠',
+    price: 1380,
+    effectText: 'Золотая рыбка, за которой любит следить кошка (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'herbarium_frame',
+    name: 'Гербарий в стеклянной раме',
+    place: 'Квартира',
+    category: 'Ботаника',
+    icon: '🍂',
+    price: 530,
+    effectText: 'Засушенные пионы и папоротник под стеклом (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'acoustic_guitar',
+    name: 'Акустическая гитара у стены',
+    place: 'Квартира',
+    category: 'Хобби',
+    icon: '🎸',
+    price: 1450,
+    effectText: 'Тёплые аккорды после закрытия лавки (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'hanging_chair',
+    name: 'Подвесное кресло-кокон',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🧺',
+    price: 2100,
+    effectText: 'Плетёное кресло с мягкими подушками (+8%)',
+    moodBonus: 8
+  },
+  {
+    id: 'scented_candles_set',
+    name: 'Аромасвечи «Лаванда и мёд»',
+    place: 'Квартира',
+    category: 'Уют',
+    icon: '🕯️',
+    price: 390,
+    effectText: 'Расслабляющий аромат перед сном (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'cat_scratcher_cactus',
+    name: 'Когтеточка-кактус с помпоном',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '🌵',
+    price: 680,
+    effectText: 'Стильная зелёная когтеточка для Пискли (+5%)',
+    moodBonus: 5
+  },
+  // --- Ещё 10 уникальных украшений для Магазина ---
+  {
+    id: 'chalkboard_menu',
+    name: 'Грифельная доска с ценами мелом',
+    place: 'Магазин',
+    category: 'Уют',
+    icon: '📝',
+    price: 520,
+    effectText: 'Меловой штендер с акциями дня (+5% атмосферы)',
+    moodBonus: 5
+  },
+  {
+    id: 'bicycle_planter',
+    name: 'Ретро-велосипед с корзиной цветов',
+    place: 'Магазин',
+    category: 'Прованс',
+    isRare: true,
+    icon: '🚲',
+    price: 1790,
+    effectText: 'Белый декоративный велосипед у витрины (+8%)',
+    moodBonus: 8
+  },
+  {
+    id: 'candle_lantern_floor',
+    name: 'Высокий напольный фонарь со свечой',
+    place: 'Магазин',
+    category: 'Уют',
+    icon: '🏮',
+    price: 740,
+    effectText: 'Тёплый свет стеклянного фонаря у входа (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'ribbon_stand',
+    name: 'Стойка с катушками атласных лент',
+    place: 'Магазин',
+    category: 'Флористика',
+    icon: '🎀',
+    price: 630,
+    effectText: 'Яркие бобины шёлковых лент на полке (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'botanical_atlas_stand',
+    name: 'Мольберт с ботанической гравюрой',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '🎨',
+    price: 1380,
+    effectText: 'Художественный этюд садовых роз (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'mirror_arch_shop',
+    name: 'Арочное зеркало для фото букетов',
+    place: 'Магазин',
+    category: 'Стиль',
+    icon: '✨',
+    price: 1120,
+    effectText: 'Расширяет пространство и даёт шикарный свет (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'ceramic_pitchers_set',
+    name: 'Набор расписных кувшинов',
+    place: 'Магазин',
+    category: 'Винтаж',
+    icon: '🍶',
+    price: 590,
+    effectText: 'Керамика ручной лепки на полке (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'wooden_crate_display',
+    name: 'Винтажный деревянный ящик с розами',
+    place: 'Магазин',
+    category: 'Прованс',
+    icon: '📦',
+    price: 460,
+    effectText: 'Ящик из состаренной сосны для композиций (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'brass_bell_counter',
+    name: 'Латунный звонок на прилавок',
+    place: 'Магазин',
+    category: 'Антиквариат',
+    icon: '🔔',
+    price: 430,
+    effectText: 'Мелодичный «дзинь!» для новых гостей (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'herb_drying_rack',
+    name: 'Подвесная сушилка с мятой и ромашкой',
+    place: 'Магазин',
+    category: 'Ботаника',
+    icon: '🌿',
+    price: 670,
+    effectText: 'Ароматный пучок свежих и сухих трав сверху (+5%)',
+    moodBonus: 5
+  },
+  // --- Ещё 10 уникальных украшений для Квартиры ---
+  {
+    id: 'record_wall_home',
+    name: 'Стена с коллекцией виниловых пластинок',
+    place: 'Квартира',
+    category: 'Атмосфера',
+    icon: '🎶',
+    price: 720,
+    effectText: 'Музыкальное панно с ретро-обложками (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'cat_hammock_window',
+    name: 'Оконный гамак для Пискли',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '🐱',
+    price: 840,
+    effectText: 'Тёплое местечко под самым солнцем у окна (+6%)',
+    moodBonus: 6
+  },
+  {
+    id: 'linen_armchair',
+    name: 'Кресло-качалка с вязаным пледом',
+    place: 'Квартира',
+    category: 'Уют',
+    isRare: true,
+    icon: '🛋️',
+    price: 1680,
+    effectText: 'Уютное кресло для чтения и отдыха (+8%)',
+    moodBonus: 8
+  },
+  {
+    id: 'stained_lamp_moon',
+    name: 'Ночник-полумесяц на тумбе',
+    place: 'Квартира',
+    category: 'Атмосфера',
+    icon: '🌙',
+    price: 590,
+    effectText: 'Мягкий лунный свет перед сном (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'indoor_bonsai',
+    name: 'Миниатюрный бонсай в плошке',
+    place: 'Квартира',
+    category: 'Ботаника',
+    isRare: true,
+    icon: '🌳',
+    price: 1490,
+    effectText: 'Дзен-деревце, приносящее спокойствие (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'ceramic_tea_set',
+    name: 'Чайный сервиз с ромашками',
+    place: 'Квартира',
+    category: 'Уют',
+    icon: '🍵',
+    price: 540,
+    effectText: 'Фарфоровый заварник и две тёплые чашки (+5%)',
+    moodBonus: 5
+  },
+  {
+    id: 'woven_basket_yarn',
+    name: 'Корзинка с клубками для кошки',
+    place: 'Квартира',
+    category: 'Питомец',
+    icon: '🧶',
+    price: 380,
+    effectText: 'Плетёная корзинка с мягкой пряжей (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'vintage_typewriter',
+    name: 'Старинная печатная машинка',
+    place: 'Квартира',
+    category: 'Антиквариат',
+    isRare: true,
+    icon: '⌨️',
+    price: 1560,
+    effectText: 'Винтажный раритет для дневника флориста (+7%)',
+    moodBonus: 7
+  },
+  {
+    id: 'dreamcatcher_boho',
+    name: 'Ловец снов с бусинами',
+    place: 'Квартира',
+    category: 'Бохо',
+    icon: '💫',
+    price: 450,
+    effectText: 'Плетёный оберег над головой для добрых снов (+4%)',
+    moodBonus: 4
+  },
+  {
+    id: 'indoor_citrus_tree',
+    name: 'Мандариновое деревце в кадке',
+    place: 'Квартира',
+    category: 'Ботаника',
+    icon: '🍊',
+    price: 990,
+    effectText: 'Яркие плоды и цитрусовый аромат дома (+6%)',
+    moodBonus: 6
   }
 ];
 
@@ -678,25 +1066,25 @@ export const SHOP_LOCATIONS = [
     name: 'Уютный подвальчик',
     price: 0,
     maxVases: 6,
-    maxWallDecor: 2,
+    maxWallDecor: 999,
     windowView: 'Тротуар тихой улочки',
-    desc: 'Небольшой камерный зал: вид на тротуар, до 2 настенных украшений и стартовая витрина.'
+    desc: 'Небольшой камерный зал: вид на тротуар, безлимитный декор и стартовая витрина.'
   },
   {
     id: 'shop_pavilion',
     name: 'Светлый павильон в сквере',
     price: 12000,
     maxVases: 9,
-    maxWallDecor: 5,
+    maxWallDecor: 999,
     windowView: 'Цветущий парк и фонтан',
-    desc: 'Панорамные окна в пол, вид на парк и фонтан, полка под подарки, 9 ваз и до 5 украшений.'
+    desc: 'Панорамные окна в пол, вид на парк и фонтан, полка под подарки, 9 ваз и любой декор.'
   },
   {
     id: 'shop_boutique',
     name: 'Бутик на главной улице',
     price: 35000,
     maxVases: 12,
-    maxWallDecor: 12,
+    maxWallDecor: 999,
     windowView: 'Исторический проспект',
     desc: 'Старинный кирпич, лепнина, золотые рейлы, вид на проспект, 12 ваз и место для всех коллекций.'
   }
@@ -705,88 +1093,155 @@ export const SHOP_LOCATIONS = [
 export const HOME_LOCATIONS = [
   {
     id: 'home_studio',
-    name: 'Крошечная студия',
+    name: 'Уютная студия',
     price: 0,
-    desc: 'Уютная стартовая комната с диванчиком, окном во двор и местом для Пискли.'
+    energyBonus: 0,
+    desc: 'Маленькая студия рядом с лавкой, где тепло и слышно мурлыканье.'
   },
   {
     id: 'home_balcony',
     name: 'Двушка с балконом',
-    price: 15000,
-    desc: 'Просторные комнаты и панорамный балкон с растениями — Пискля гуляет по двум зонам!'
+    price: 14000,
+    energyBonus: 8,
+    desc: 'Просторная светлая квартира со стеклянным выходом на уютный балкон (+8% к отдыху).'
   },
   {
     id: 'home_loft',
-    name: 'Мансарда с камином',
-    price: 45000,
-    desc: 'Светлая деревянная мансарда со звёздным небом, живым каменным камином и простором.'
+    name: 'Тёплая мансарда с камином',
+    price: 42000,
+    energyBonus: 18,
+    desc: 'Роскошная, светлая, очень тёплая мансарда с живым камином и видом на небо (+18% к отдыху).'
   }
 ];
 
+// Каталог филиалов франшизы (Этап 2)
+export const FRANCHISE_CATALOG = [
+  {
+    id: 'branch_mall_island',
+    name: 'Островок в ТЦ «Мегаполис»',
+    icon: '🏬',
+    price: 18000,
+    weeklyRent: 2400,
+    minDailyRevenue: 1500,
+    maxDailyRevenue: 2400,
+    themeClass: 'branch-mall',
+    interiorDesc: 'Светлый стеклянный островок в центре галереи ТЦ: витрина с подсветкой, эскалатор позади и поток посетителей с пакетами.',
+    desc: 'Компактная точка в торговом центре. Быстрая окупаемость и стабильный поток покупателей.'
+  },
+  {
+    id: 'branch_metro_pavilion',
+    name: 'Павильон у метро «Центральная»',
+    icon: '🚇',
+    price: 32000,
+    weeklyRent: 4200,
+    minDailyRevenue: 2500,
+    maxDailyRevenue: 3900,
+    themeClass: 'branch-metro',
+    interiorDesc: 'Бойкий городской павильон с панорамным стеклом, неоновой вывеской «24/7 Свежие цветы» и огнями проспекта.',
+    desc: 'Высокий уличный трафик с утра до вечера. Отлично берут готовые букеты на бегу.'
+  },
+  {
+    id: 'branch_center_boutique',
+    name: 'Элитный бутик «На Бульваре»',
+    icon: '🏛️',
+    price: 65000,
+    weeklyRent: 7800,
+    minDailyRevenue: 4700,
+    maxDailyRevenue: 7400,
+    themeClass: 'branch-boutique',
+    interiorDesc: 'Просторный салон с мраморной стойкой, золотыми арками, хрустальной люстрой и ароматическими диффузорами.',
+    desc: 'Премиальная точка в центре города. Высокий средний чек, корпоративные и VIP-заказы.'
+  }
+];
+
+export const WEATHERS = [
+  { id: 'sunny', label: 'Ясно', icon: '☀️', cssClass: 'weather-sunny' },
+  { id: 'rainy', label: 'Дождик', icon: '🌧️', cssClass: 'weather-rainy' },
+  { id: 'frost', label: 'Мороз', icon: '❄️', cssClass: 'weather-frost' }
+];
+
+export const SEASONS = {
+  winter: { id: 'winter', name: 'Зима', label: 'Зима', icon: '❄️' },
+  early_spring: { id: 'early_spring', name: 'Ранняя весна', label: 'Ранняя весна', icon: '🌱' },
+  spring: { id: 'spring', name: 'Весна', label: 'Весна', icon: '🌸' },
+  summer: { id: 'summer', name: 'Лето', label: 'Лето', icon: '☀️' },
+  autumn: { id: 'autumn', name: 'Осень', label: 'Осень', icon: '🍂' }
+};
+
+export const HOLIDAYS = [
+  { month: 1, day: 1, name: 'Новый год', note: 'Праздничные букеты и двойные цены!' },
+  { month: 2, day: 14, name: 'День святого Валентина', note: 'Ажиотаж на красные розы! Спрос и цены x2!' },
+  { month: 3, day: 8, name: '8 Марта', note: 'Главный цветочный день года! Тюльпаны и пионы x2!' },
+  { month: 5, day: 1, name: 'Праздник весны', note: 'Лёгкие весенние композиции нарасхват!' },
+  { month: 9, day: 1, name: 'День знаний', note: 'Школьный бум! Букеты и опт x2!' },
+  { month: 10, day: 5, name: 'День учителя', note: 'Подарочные букеты учителям нарасхват!' },
+  { month: 11, day: 24, name: 'День матери', note: 'Нежные букеты для мам и открытки x2!' },
+  { month: 12, day: 31, name: 'Новогодний сочельник', note: 'Ёлочные композиции и подарки x2!' }
+];
+
 export const JOB_ROLES = [
-  { id: 'assistant', name: 'Флорист-помощник', icon: '💐', baseSalary: 1200 },
-  { id: 'courier', name: 'Курьер', icon: '🚗', baseSalary: 1400 }
+  {
+    id: 'assistant',
+    name: 'Флорист-помощник',
+    icon: '🌷',
+    baseSalary: 1400,
+    desc: 'Меняет воду, помогает с закупками и собирает базовые букеты'
+  },
+  {
+    id: 'courier',
+    name: 'Курьер',
+    icon: '🚚',
+    baseSalary: 1100,
+    desc: 'Развозит заказы из Direct по всему городу и привозит чаевые'
+  }
 ];
 
 export const JOB_SCHEDULES = [
-  { id: 'full', label: 'Полный день (09:00–21:00)' },
-  { id: 'morning', label: 'Утренние смены (09:00–15:00)' },
-  { id: 'flex', label: 'Гибкий график / выходные' }
+  { id: 'full', label: 'Полная смена (9:00–21:00)' },
+  { id: 'morning_half', label: 'Утро (9:00–15:00)' },
+  { id: 'evening_half', label: 'Вечер (15:00–21:00)' },
+  { id: 'flexible', label: 'Плавающий 2/2' }
 ];
 
-/** Возвращает объект Date для текущего игрового дня от выбранной даты старта */
-export function getGameDateObj(startDateStr, dayOffset = 0) {
+export const CLIENT_MOODS = ['Вежливый', 'Торопится', 'Романтик', 'Придирчивый', 'Вдохновлённый'];
+
+export function getGameDateObj(startDateStr = '2026-02-08', dayOffset = 0) {
   const parts = String(startDateStr || '2026-02-08').split('-').map(Number);
   const y = parts[0] || 2026;
   const m = (parts[1] || 2) - 1;
   const d = parts[2] || 8;
-  return new Date(y, m, d + dayOffset);
+  return new Date(y, m, d + Math.max(0, dayOffset));
 }
 
-/**
- * Сезон за окном:
- * - 1 марта .. 14 апреля: ранняя весна (снег + проглядывает трава)
- * - 15 апреля .. 14 сентября: тепло (солнце и зелёная трава)
- * - 15 сентября .. 4 ноября: осень (оранжевая листва и листья)
- * - 5 ноября .. конец февраля: зима (снег)
- */
+export function formatGameDate(dateObj) {
+  const months = [
+    'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
+  ];
+  return `${dateObj.getDate()} ${months[dateObj.getMonth()]}`;
+}
+
 export function getSeasonInfo(dateObj) {
-  const md = (dateObj.getMonth() + 1) * 100 + dateObj.getDate();
-
-  if (md >= 301 && md <= 414) {
-    return { id: 'early-spring', label: 'Ранняя весна' };
-  }
-  if (md >= 415 && md <= 914) {
-    return { id: 'summer', label: 'Тепло' };
-  }
-  if (md >= 915 && md <= 1104) {
-    return { id: 'autumn', label: 'Осень' };
-  }
-  return { id: 'winter', label: 'Зима' };
+  const m = dateObj.getMonth() + 1;
+  const d = dateObj.getDate();
+  if (m === 12 || m === 1 || m === 2) return SEASONS.winter;
+  if (m === 3 && d <= 20) return SEASONS.early_spring;
+  if (m === 3 || m === 4 || m === 5) return SEASONS.spring;
+  if (m === 6 || m === 7 || m === 8) return SEASONS.summer;
+  return SEASONS.autumn;
 }
 
-/** Погода с учётом текущего времени года */
 export function getWeatherForSeason(seasonId) {
   const r = Math.random();
-  if (seasonId === 'winter') return r < 0.65 ? 'frost' : 'sunny';
-  if (seasonId === 'early-spring') return r < 0.45 ? 'sunny' : r < 0.75 ? 'rainy' : 'frost';
-  if (seasonId === 'autumn') return r < 0.55 ? 'rainy' : 'sunny';
-  return r < 0.72 ? 'sunny' : 'rainy';
+  if (seasonId === 'winter') return r < 0.72 ? 'frost' : 'sunny';
+  if (seasonId === 'early_spring') return r < 0.35 ? 'frost' : r < 0.65 ? 'rainy' : 'sunny';
+  if (seasonId === 'spring') return r < 0.35 ? 'rainy' : 'sunny';
+  if (seasonId === 'summer') return r < 0.2 ? 'rainy' : 'sunny';
+  return r < 0.55 ? 'rainy' : 'sunny';
 }
 
-/** Проверка праздника по реальному числу календаря */
 export function getHolidayForDate(dateObj) {
   const m = dateObj.getMonth() + 1;
   const d = dateObj.getDate();
-  if (m === 1 && d <= 7) return { name: 'Новогодние каникулы 🎄', demandMult: 2, priceMult: 1.5 };
-  if (m === 2 && d === 14) return { name: 'День Влюблённых (14 Февраля) ❤️', demandMult: 3, priceMult: 2 };
-  if (m === 2 && d === 23) return { name: 'День защитника Отечества (23 Февраля)', demandMult: 2, priceMult: 1.5 };
-  if (m === 3 && d === 8) return { name: 'Международный женский день (8 Марта) 🌷', demandMult: 3, priceMult: 2 };
-  if (m === 5 && d === 1) return { name: 'Праздник Весны (1 Мая)', demandMult: 2, priceMult: 1.3 };
-  if (m === 5 && d === 9) return { name: 'День Победы (9 Мая)', demandMult: 2.5, priceMult: 1.5 };
-  if (m === 9 && d === 1) return { name: 'День Знаний (1 Сентября) 📚', demandMult: 3, priceMult: 2 };
-  if (m === 10 && d === 5) return { name: 'День Учителя', demandMult: 2.5, priceMult: 1.6 };
-  if (m === 11 && d >= 24 && d <= 30 && dateObj.getDay() === 0) return { name: 'День Матери 💐', demandMult: 2.5, priceMult: 1.6 };
-  if (m === 12 && d === 31) return { name: 'Канун Нового Года ✨', demandMult: 2.5, priceMult: 1.8 };
-  return null;
+  return HOLIDAYS.find((h) => h.month === m && h.day === d) || null;
 }
