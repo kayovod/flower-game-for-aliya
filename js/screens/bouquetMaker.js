@@ -1,12 +1,12 @@
-import { FLOWERS_CATALOG, WRAPPINGS, RIBBONS } from '../config.js';
+import { FLOWERS_CATALOG, ACCESSORIES_CATALOG, WRAPPINGS, RIBBONS } from '../config.js';
 import { gameState, saveState, addGameMinutes } from '../state.js';
 import { getFlowerSvgDataUrl, getSingleFlowerWrappedSvg } from '../graphics/flowersSvg.js';
 import { playPaperSound, playShutterSound } from '../sound.js';
 
 const imageCache = {};
 let activeTool = 'move'; // 'move' | 'scissors'
-let selectedStemId = null;
-let draggingStem = null;
+let selectedItem = null; // { kind: 'stem' | 'acc', id: string } | null
+let draggingItem = null; // { kind: 'stem' | 'acc', ref: object } | null
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
@@ -14,6 +14,54 @@ let savedScreenScrollTop = 0;
 let savedTrayScrollLeft = 0;
 let savedWrapScrollLeft = 0;
 let savedRibbonScrollLeft = 0;
+
+function getAccTypeId(item) {
+  return typeof item === 'string' ? item : item?.typeId;
+}
+
+function getAccessoryDefaults(typeId) {
+  const map = {
+    balloon_heart: { x: 438, y: 108, angle: 0.14, z: 'back' },
+    balloon_set: { x: 118, y: 105, angle: 0, z: 'back' },
+    greeting_card: { x: 362, y: 232, angle: 0.24, z: 'mid' },
+    plush_bear: { x: 166, y: 365, angle: -0.1, z: 'front' },
+    plush_bunny: { x: 394, y: 362, angle: 0.1, z: 'front' },
+    chocolates_box: { x: 152, y: 438, angle: -0.06, z: 'front' },
+    macarons_box: { x: 404, y: 438, angle: 0.06, z: 'front' }
+  };
+  return map[typeId] || { x: 280, y: 320, angle: 0, z: 'front' };
+}
+
+function normalizeAccessoriesList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((item, idx) => {
+      if (typeof item === 'string') {
+        const def = getAccessoryDefaults(item);
+        return {
+          id: `acc_norm_${idx}_${item}`,
+          typeId: item,
+          x: def.x,
+          y: def.y,
+          angle: def.angle,
+          z: def.z
+        };
+      }
+      if (item && item.typeId) {
+        const def = getAccessoryDefaults(item.typeId);
+        return {
+          id: item.id || `acc_norm_${idx}_${item.typeId}`,
+          typeId: item.typeId,
+          x: Number.isFinite(item.x) ? item.x : def.x,
+          y: Number.isFinite(item.y) ? item.y : def.y,
+          angle: Number.isFinite(item.angle) ? item.angle : def.angle,
+          z: ['back', 'mid', 'front'].includes(item.z) ? item.z : def.z
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
 
 function getCachedFlowerImage(typeId, onLoadCallback) {
   if (imageCache[typeId]) return imageCache[typeId];
@@ -81,7 +129,7 @@ export function addFlowerToDraftBouquet(vaseUid, showToast, count = 1, silent = 
       trimmed: false
     };
     draft.stems.push(newStem);
-    selectedStemId = newStem.id;
+    selectedItem = { kind: 'stem', id: newStem.id };
   }
 
   playPaperSound();
@@ -92,8 +140,70 @@ export function addFlowerToDraftBouquet(vaseUid, showToast, count = 1, silent = 
   return true;
 }
 
+function addAccessoryToDraftBouquet(accId, showToast) {
+  const inv = (gameState.accessoriesInventory || []).find((a) => a.id === accId && a.qty > 0);
+  const meta = ACCESSORIES_CATALOG[accId];
+  if (!inv || !meta) {
+    showToast('Этого дополнения нет в наличии');
+    return false;
+  }
+  const draft = gameState.currentBouquet;
+  draft.accessories = normalizeAccessoriesList(draft.accessories);
+
+  inv.qty -= 1;
+  if (inv.qty <= 0) {
+    gameState.accessoriesInventory = gameState.accessoriesInventory.filter((a) => a.id !== accId);
+  }
+
+  const def = getAccessoryDefaults(accId);
+  const sameCount = draft.accessories.filter((a) => a.typeId === accId).length;
+  const newAcc = {
+    id: 'acc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    typeId: accId,
+    x: def.x + sameCount * 20,
+    y: def.y + sameCount * 12,
+    angle: def.angle,
+    z: def.z
+  };
+  draft.accessories.push(newAcc);
+  selectedItem = { kind: 'acc', id: newAcc.id };
+  playPaperSound();
+  saveState();
+  showToast(`+ ${meta.icon} ${meta.shortName} добавлено — перетащи куда хочешь!`);
+  return true;
+}
+
+function removeAccessoryFromDraftBouquet(accIdx, showToast) {
+  const draft = gameState.currentBouquet;
+  draft.accessories = normalizeAccessoriesList(draft.accessories);
+  const [removed] = draft.accessories.splice(accIdx, 1);
+  if (!removed) return;
+  if (selectedItem?.kind === 'acc' && selectedItem?.id === removed.id) {
+    selectedItem = null;
+  }
+  const typeId = getAccTypeId(removed);
+  returnAccessoryToInventory(typeId);
+  playPaperSound();
+  saveState();
+  const meta = ACCESSORIES_CATALOG[typeId];
+  showToast(`${meta ? meta.shortName : 'Дополнение'} убрано обратно на склад`);
+}
+
+function returnAccessoryToInventory(itemOrId) {
+  const accId = getAccTypeId(itemOrId);
+  if (!accId || !ACCESSORIES_CATALOG[accId]) return;
+  if (!Array.isArray(gameState.accessoriesInventory)) gameState.accessoriesInventory = [];
+  const existing = gameState.accessoriesInventory.find((a) => a.id === accId);
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    gameState.accessoriesInventory.push({ id: accId, qty: 1 });
+  }
+}
+
 export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshParent) {
   const draft = gameState.currentBouquet;
+  draft.accessories = normalizeAccessoriesList(draft.accessories);
   const totalPrice = calculateBouquetPrice(draft);
 
   const trayHtml = gameState.inventory.length
@@ -119,6 +229,44 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         .join('')
     : `<p class="muted-text">Вазы пусты</p>`;
 
+  const availableAccs = (gameState.accessoriesInventory || []).filter((a) => a.qty > 0);
+  const attachedAccsHtml = draft.accessories.length
+    ? `
+      <div style="display:flex; flex-wrap:wrap; gap:5px;">
+        ${draft.accessories
+          .map((acc, idx) => {
+            const meta = ACCESSORIES_CATALOG[acc.typeId];
+            if (!meta) return '';
+            const isSel = selectedItem?.kind === 'acc' && selectedItem?.id === acc.id;
+            return `
+              <button class="wrap-pill ${isSel ? 'active' : ''}" data-remove-acc-idx="${idx}" title="Нажми, чтобы убрать">
+                ${meta.icon} ${meta.shortName} (+${meta.price}₽) ✕
+              </button>
+            `;
+          })
+          .join('')}
+      </div>
+    `
+    : '';
+
+  const accTrayHtml = availableAccs.length
+    ? `
+      <div class="wrap-options-row">
+        ${availableAccs
+          .map((acc) => {
+            const meta = ACCESSORIES_CATALOG[acc.id];
+            if (!meta) return '';
+            return `
+              <button class="wrap-pill" data-add-acc="${acc.id}">
+                ${meta.icon} ${meta.shortName} (${acc.qty} шт • +${meta.price}₽)
+              </button>
+            `;
+          })
+          .join('')}
+      </div>
+    `
+    : `<p class="muted-text" style="font-size:11.5px;">Открытки, игрушки, сладости и шарики можно заказать в «📱 Телефон → 🚚 Опт».</p>`;
+
   const wrapsHtml = WRAPPINGS.map(
     (w) => `
       <button class="wrap-pill ${draft.wrappingId === w.id ? 'active' : ''}" data-wrap-id="${w.id}">
@@ -137,9 +285,20 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     `
   ).join('');
 
-  const selectedIndex = draft.stems.findIndex((s) => s.id === selectedStemId);
-  const canMoveUp = selectedIndex !== -1 && selectedIndex < draft.stems.length - 1;
-  const canMoveDown = selectedIndex > 0;
+  const selStem = selectedItem?.kind === 'stem' ? draft.stems.find((s) => s.id === selectedItem.id) : null;
+  const selAcc = selectedItem?.kind === 'acc' ? draft.accessories.find((a) => a.id === selectedItem.id) : null;
+  const hasSelection = Boolean(selStem || selAcc);
+
+  let canMoveUp = false;
+  let canMoveDown = false;
+  if (selStem) {
+    const idx = draft.stems.findIndex((s) => s.id === selStem.id);
+    canMoveUp = idx !== -1 && idx < draft.stems.length - 1;
+    canMoveDown = idx > 0;
+  } else if (selAcc) {
+    canMoveUp = selAcc.z !== 'front';
+    canMoveDown = selAcc.z !== 'back';
+  }
 
   const readyHtml =
     gameState.readyBouquets.length > 0
@@ -153,10 +312,10 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
             <div class="ready-bouquet-card" style="width: 126px;">
               <img class="ready-bouquet-img" src="${b.thumbnail}" alt="Букет" />
               <strong style="font-size:12px;">${b.price} ₽</strong>
-              <span class="muted-text" style="font-size:10.5px;">${b.stemsCount} стеб.</span>
+              <span class="muted-text" style="font-size:10.5px;">${b.stemsCount} стеб.${b.accessories?.length ? ` + ${b.accessories.length} под.` : ''}</span>
               <div style="display:flex; gap:4px; width:100%; margin-top:2px;">
                 <button class="btn btn-soft" data-edit-bouquet="${b.id}" style="flex:1; padding:4px; font-size:10.5px;">✏️ Изм.</button>
-                <button class="btn btn-danger" data-del-bouquet="${b.id}" style="padding:4px 6px; font-size:10.5px;" title="Разобрать в вазы">🗑️</button>
+                <button class="btn btn-danger" data-del-bouquet="${b.id}" style="padding:4px 6px; font-size:10.5px;" title="Разобрать">🗑️</button>
               </div>
             </div>
           `
@@ -172,7 +331,7 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         <canvas id="bouquet-canvas" width="560" height="540"></canvas>
         <div class="canvas-price-pill">💐 На столе (${draft.stems.length} шт.): ${totalPrice} ₽</div>
         <div class="canvas-hint-pill">
-          ${activeTool === 'move' ? '✋ Тяни цветок • выбирай слой (время на паузе)' : '✂️ Нажми на цветок, чтобы подрезать'}
+          ${activeTool === 'move' ? '✋ Тяни цветы и подарки куда угодно • крути и меняй слой' : '✂️ Нажми на цветок, чтобы подрезать'}
         </div>
       </div>
 
@@ -183,10 +342,10 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         <button class="tool-btn ${activeTool === 'scissors' ? 'active' : ''}" id="tool-scissors">
           <span>✂️</span><span>Секатор</span>
         </button>
-        <button class="tool-btn" id="tool-rot-left" ${!selectedStemId ? 'disabled' : ''}>
+        <button class="tool-btn" id="tool-rot-left" ${!hasSelection ? 'disabled' : ''}>
           <span>⟲</span><span>Наклон</span>
         </button>
-        <button class="tool-btn" id="tool-rot-right" ${!selectedStemId ? 'disabled' : ''}>
+        <button class="tool-btn" id="tool-rot-right" ${!hasSelection ? 'disabled' : ''}>
           <span>⟳</span><span>Наклон</span>
         </button>
       </div>
@@ -198,10 +357,10 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
         <button class="tool-btn" id="tool-layer-down" ${!canMoveDown ? 'disabled' : ''}>
           <span>⬇️</span><span>Глубже</span>
         </button>
-        <button class="tool-btn" id="btn-remove-stem" ${!selectedStemId ? 'disabled' : ''}>
+        <button class="tool-btn" id="btn-remove-stem" ${!hasSelection ? 'disabled' : ''}>
           <span>↩️</span><span>Убрать</span>
         </button>
-        <button class="tool-btn" id="btn-clear-table" ${draft.stems.length === 0 ? 'disabled' : ''}>
+        <button class="tool-btn" id="btn-clear-table" ${draft.stems.length === 0 && draft.accessories.length === 0 ? 'disabled' : ''}>
           <span>🧹</span><span>Очистить</span>
         </button>
       </div>
@@ -213,7 +372,13 @@ export function renderBouquetMaker(container, onHudUpdate, showToast, onRefreshP
     </div>
 
     <div class="card">
-      <div class="card-title">🎁 Упаковка и лента</div>
+      <div class="card-title">🎁 Дополнения к букету ${draft.accessories.length ? `(приложено: ${draft.accessories.length})` : ''}</div>
+      ${attachedAccsHtml}
+      ${accTrayHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-title">🎀 Упаковка и лента</div>
       <div class="wrap-options-row">${wrapsHtml}</div>
       <div class="wrap-options-row">${ribbonsHtml}</div>
     </div>
@@ -245,9 +410,32 @@ function calculateBouquetPrice(draft) {
     if (s.trimmed) trimmedBonus += 15;
   });
 
-  if (draft.stems.length === 0) return 0;
+  let accessoriesSum = 0;
+  (draft.accessories || []).forEach((item) => {
+    accessoriesSum += ACCESSORIES_CATALOG[getAccTypeId(item)]?.price || 0;
+  });
+
+  if (draft.stems.length === 0 && accessoriesSum === 0) return 0;
+  if (draft.stems.length === 0) return accessoriesSum;
   const craftBonus = draft.stems.length >= 3 ? 50 : 0;
-  return flowersSum + wrap.price + ribbon.price + trimmedBonus + craftBonus;
+  return flowersSum + wrap.price + ribbon.price + trimmedBonus + craftBonus + accessoriesSum;
+}
+
+function findHitItemAtPoint(draft, pt) {
+  const accs = draft.accessories || [];
+  const frontHit = [...accs].reverse().find((a) => a.z === 'front' && Math.hypot(pt.x - a.x, pt.y - a.y) < 56);
+  if (frontHit) return { kind: 'acc', ref: frontHit };
+
+  const midHit = [...accs].reverse().find((a) => a.z === 'mid' && Math.hypot(pt.x - a.x, pt.y - a.y) < 56);
+  if (midHit) return { kind: 'acc', ref: midHit };
+
+  const stemHit = [...draft.stems].reverse().find((s) => Math.hypot(pt.x - s.x, pt.y - (s.y - 30)) < 68);
+  if (stemHit) return { kind: 'stem', ref: stemHit };
+
+  const backHit = [...accs].reverse().find((a) => a.z === 'back' && Math.hypot(pt.x - a.x, pt.y - a.y) < 56);
+  if (backHit) return { kind: 'acc', ref: backHit };
+
+  return null;
 }
 
 function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent) {
@@ -274,49 +462,57 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
 
   canvas.addEventListener('pointerdown', (e) => {
     const pt = getCanvasPoint(e);
-    const hit = [...draft.stems]
-      .reverse()
-      .find((s) => Math.hypot(pt.x - s.x, pt.y - (s.y - 30)) < 68);
+    const hit = findHitItemAtPoint(draft, pt);
 
     if (!hit) {
-      selectedStemId = null;
+      selectedItem = null;
       drawBouquetCanvas(ctx, canvas);
       return;
     }
 
-    selectedStemId = hit.id;
+    selectedItem = { kind: hit.kind, id: hit.ref.id };
 
     if (activeTool === 'scissors') {
-      if (!hit.trimmed) {
-        hit.trimmed = true;
-        playPaperSound();
-        saveState();
-        showToast('✂️ Стебель подрезан! (+15 ₽ к ценности)');
-        refreshKeepingScroll();
+      if (hit.kind === 'stem') {
+        if (!hit.ref.trimmed) {
+          hit.ref.trimmed = true;
+          playPaperSound();
+          saveState();
+          showToast('✂️ Стебель подрезан! (+15 ₽ к ценности)');
+          refreshKeepingScroll();
+        } else {
+          showToast('Этот стебель уже аккуратно подрезан');
+        }
       } else {
-        showToast('Этот стебель уже аккуратно подрезан');
+        showToast('✂️ Секатором подрезают только цветы — переключи на «✋ Двигать»');
+        drawBouquetCanvas(ctx, canvas);
       }
       return;
     }
 
-    draggingStem = hit;
-    dragOffsetX = pt.x - hit.x;
-    dragOffsetY = pt.y - hit.y;
+    draggingItem = hit;
+    dragOffsetX = pt.x - hit.ref.x;
+    dragOffsetY = pt.y - hit.ref.y;
     canvas.setPointerCapture(e.pointerId);
     drawBouquetCanvas(ctx, canvas);
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    if (!draggingStem) return;
+    if (!draggingItem) return;
     const pt = getCanvasPoint(e);
-    draggingStem.x = Math.max(85, Math.min(475, pt.x - dragOffsetX));
-    draggingStem.y = Math.max(115, Math.min(400, pt.y - dragOffsetY));
+    if (draggingItem.kind === 'stem') {
+      draggingItem.ref.x = Math.max(85, Math.min(475, pt.x - dragOffsetX));
+      draggingItem.ref.y = Math.max(115, Math.min(400, pt.y - dragOffsetY));
+    } else {
+      draggingItem.ref.x = Math.max(48, Math.min(512, pt.x - dragOffsetX));
+      draggingItem.ref.y = Math.max(48, Math.min(492, pt.y - dragOffsetY));
+    }
     drawBouquetCanvas(ctx, canvas);
   });
 
   canvas.addEventListener('pointerup', () => {
-    if (draggingStem) {
-      draggingStem = null;
+    if (draggingItem) {
+      draggingItem = null;
       saveState();
       refreshKeepingScroll();
     }
@@ -333,56 +529,94 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
   });
 
   document.getElementById('tool-rot-left')?.addEventListener('click', () => {
-    const stem = draft.stems.find((s) => s.id === selectedStemId);
-    if (!stem) return;
-    stem.angle = Math.max(-0.85, stem.angle - 0.14);
+    if (!selectedItem) return;
+    if (selectedItem.kind === 'stem') {
+      const stem = draft.stems.find((s) => s.id === selectedItem.id);
+      if (!stem) return;
+      stem.angle = Math.max(-0.85, stem.angle - 0.14);
+    } else {
+      const acc = draft.accessories.find((a) => a.id === selectedItem.id);
+      if (!acc) return;
+      acc.angle = Math.max(-1.4, (acc.angle || 0) - 0.14);
+    }
     saveState();
     drawBouquetCanvas(ctx, canvas);
   });
 
   document.getElementById('tool-rot-right')?.addEventListener('click', () => {
-    const stem = draft.stems.find((s) => s.id === selectedStemId);
-    if (!stem) return;
-    stem.angle = Math.min(0.85, stem.angle + 0.14);
+    if (!selectedItem) return;
+    if (selectedItem.kind === 'stem') {
+      const stem = draft.stems.find((s) => s.id === selectedItem.id);
+      if (!stem) return;
+      stem.angle = Math.min(0.85, stem.angle + 0.14);
+    } else {
+      const acc = draft.accessories.find((a) => a.id === selectedItem.id);
+      if (!acc) return;
+      acc.angle = Math.min(1.4, (acc.angle || 0) + 0.14);
+    }
     saveState();
     drawBouquetCanvas(ctx, canvas);
   });
 
   document.getElementById('tool-layer-up')?.addEventListener('click', () => {
-    const idx = draft.stems.findIndex((s) => s.id === selectedStemId);
-    if (idx === -1 || idx >= draft.stems.length - 1) return;
-    const [stem] = draft.stems.splice(idx, 1);
-    draft.stems.splice(idx + 1, 0, stem);
+    if (!selectedItem) return;
+    if (selectedItem.kind === 'stem') {
+      const idx = draft.stems.findIndex((s) => s.id === selectedItem.id);
+      if (idx === -1 || idx >= draft.stems.length - 1) return;
+      const [stem] = draft.stems.splice(idx, 1);
+      draft.stems.splice(idx + 1, 0, stem);
+    } else {
+      const acc = draft.accessories.find((a) => a.id === selectedItem.id);
+      if (!acc) return;
+      if (acc.z === 'back') acc.z = 'mid';
+      else if (acc.z === 'mid') acc.z = 'front';
+    }
     saveState();
     refreshKeepingScroll();
   });
 
   document.getElementById('tool-layer-down')?.addEventListener('click', () => {
-    const idx = draft.stems.findIndex((s) => s.id === selectedStemId);
-    if (idx <= 0) return;
-    const [stem] = draft.stems.splice(idx, 1);
-    draft.stems.splice(idx - 1, 0, stem);
+    if (!selectedItem) return;
+    if (selectedItem.kind === 'stem') {
+      const idx = draft.stems.findIndex((s) => s.id === selectedItem.id);
+      if (idx <= 0) return;
+      const [stem] = draft.stems.splice(idx, 1);
+      draft.stems.splice(idx - 1, 0, stem);
+    } else {
+      const acc = draft.accessories.find((a) => a.id === selectedItem.id);
+      if (!acc) return;
+      if (acc.z === 'front') acc.z = 'mid';
+      else if (acc.z === 'mid') acc.z = 'back';
+    }
     saveState();
     refreshKeepingScroll();
   });
 
   document.getElementById('btn-remove-stem')?.addEventListener('click', () => {
-    const stem = draft.stems.find((s) => s.id === selectedStemId);
-    if (!stem) return;
-    returnStemToInventory(stem);
-    draft.stems = draft.stems.filter((s) => s.id !== stem.id);
-    selectedStemId = null;
-    saveState();
-    showToast('Стебель возвращён в вазу');
+    if (!selectedItem) return;
+    if (selectedItem.kind === 'stem') {
+      const stem = draft.stems.find((s) => s.id === selectedItem.id);
+      if (!stem) return;
+      returnStemToInventory(stem);
+      draft.stems = draft.stems.filter((s) => s.id !== stem.id);
+      selectedItem = null;
+      saveState();
+      showToast('Стебель возвращён в вазу');
+    } else {
+      const accIdx = draft.accessories.findIndex((a) => a.id === selectedItem.id);
+      if (accIdx !== -1) removeAccessoryFromDraftBouquet(accIdx, showToast);
+    }
     refreshKeepingScroll();
   });
 
   document.getElementById('btn-clear-table')?.addEventListener('click', () => {
     draft.stems.forEach((s) => returnStemToInventory(s));
     draft.stems = [];
-    selectedStemId = null;
+    (draft.accessories || []).forEach((acc) => returnAccessoryToInventory(acc));
+    draft.accessories = [];
+    selectedItem = null;
     saveState();
-    showToast('Все цветы возвращены в вазы');
+    showToast('Цветы и дополнения возвращены на склад');
     refreshKeepingScroll();
   });
 
@@ -392,6 +626,23 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
       if (addFlowerToDraftBouquet(btn.dataset.addVase, showToast)) {
         onRefreshParent();
       }
+    });
+  });
+
+  container.querySelectorAll('[data-add-acc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      captureScrollPositions();
+      if (addAccessoryToDraftBouquet(btn.dataset.addAcc, showToast)) {
+        onRefreshParent();
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-remove-acc-idx]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      captureScrollPositions();
+      removeAccessoryFromDraftBouquet(Number(btn.dataset.removeAccIdx), showToast);
+      onRefreshParent();
     });
   });
 
@@ -422,6 +673,9 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
       if (draft.stems.length > 0) {
         draft.stems.forEach((s) => returnStemToInventory(s));
       }
+      if (Array.isArray(draft.accessories) && draft.accessories.length > 0) {
+        draft.accessories.forEach((acc) => returnAccessoryToInventory(acc));
+      }
 
       if (Array.isArray(ready.stems) && ready.stems.length > 0) {
         draft.stems = ready.stems.map((s) => ({ ...s }));
@@ -442,10 +696,11 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
         });
       }
 
+      draft.accessories = normalizeAccessoriesList(ready.accessories);
       draft.wrappingId = ready.wrappingId || 'craft';
       draft.ribbonId = ready.ribbonId || 'satin_rose';
       gameState.readyBouquets = gameState.readyBouquets.filter((b) => b.id !== bId);
-      selectedStemId = draft.stems[0]?.id || null;
+      selectedItem = draft.stems[0] ? { kind: 'stem', id: draft.stems[0].id } : null;
       playPaperSound();
       saveState();
       showToast('✏️ Букет возвращён на стол для редактирования');
@@ -464,21 +719,22 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
       } else {
         (ready.items || []).forEach((typeId) => returnStemToInventory({ typeId, freshness: 85, discounted: false }));
       }
+      (ready.accessories || []).forEach((acc) => returnAccessoryToInventory(acc));
 
       gameState.readyBouquets = gameState.readyBouquets.filter((b) => b.id !== bId);
       saveState();
-      showToast('Букет разобран, цветы снова в вазах');
+      showToast('Букет разобран, цветы и подарки возвращены');
       refreshKeepingScroll();
     });
   });
 
   document.getElementById('btn-photo-bouquet')?.addEventListener('click', () => {
-    const prevSelected = selectedStemId;
-    selectedStemId = null;
+    const prevSelected = selectedItem;
+    selectedItem = null;
     drawBouquetCanvas(ctx, canvas, true);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-    selectedStemId = prevSelected;
+    selectedItem = prevSelected;
     drawBouquetCanvas(ctx, canvas, false);
 
     playShutterSound();
@@ -489,6 +745,7 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
       price: calculateBouquetPrice(draft),
       stemsCount: draft.stems.length,
       items: draft.stems.map((s) => s.typeId),
+      accessories: (draft.accessories || []).map((a) => getAccTypeId(a)),
       description: describeBouquet(draft),
       day: gameState.day
     });
@@ -500,11 +757,11 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
   });
 
   document.getElementById('btn-save-bouquet')?.addEventListener('click', () => {
-    const prevSelected = selectedStemId;
-    selectedStemId = null;
+    const prevSelected = selectedItem;
+    selectedItem = null;
     drawBouquetCanvas(ctx, canvas, true);
     const thumbnail = canvas.toDataURL('image/jpeg', 0.78);
-    selectedStemId = prevSelected;
+    selectedItem = prevSelected;
 
     const ready = {
       id: 'bouquet_' + Date.now(),
@@ -514,13 +771,15 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
       thumbnail,
       items: draft.stems.map((s) => s.typeId),
       stems: draft.stems.map((s) => ({ ...s })),
+      accessories: (draft.accessories || []).map((a) => ({ ...a })),
       wrappingId: draft.wrappingId,
       ribbonId: draft.ribbonId
     };
 
     gameState.readyBouquets.unshift(ready);
     draft.stems = [];
-    selectedStemId = null;
+    draft.accessories = [];
+    selectedItem = null;
     playPaperSound();
     const justClosed = addGameMinutes(20);
     onHudUpdate();
@@ -533,10 +792,33 @@ function setupCanvasAndEvents(container, onHudUpdate, showToast, onRefreshParent
   });
 }
 
+function drawAccessoryOnCanvas(ctx, acc, isPhotoMode) {
+  const { typeId, x, y, angle } = acc;
+  if (typeId === 'balloon_heart') drawHeartBalloon(ctx, x, y, 280, 358, angle);
+  else if (typeId === 'balloon_set') drawBalloonCluster(ctx, x, y, 280, 358, angle);
+  else if (typeId === 'greeting_card') drawGreetingCard(ctx, x, y, angle);
+  else if (typeId === 'plush_bear') drawPlushBear(ctx, x, y, angle);
+  else if (typeId === 'plush_bunny') drawPlushBunny(ctx, x, y, angle);
+  else if (typeId === 'chocolates_box') drawChocolatesBox(ctx, x, y, angle);
+  else if (typeId === 'macarons_box') drawMacaronsBox(ctx, x, y, angle);
+
+  if (!isPhotoMode && selectedItem?.kind === 'acc' && selectedItem?.id === acc.id) {
+    ctx.save();
+    ctx.strokeStyle = '#D98A7C';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.arc(x, y, 48, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
   const w = canvas.width;
   const h = canvas.height;
   const draft = gameState.currentBouquet;
+  const accs = normalizeAccessoriesList(draft.accessories);
 
   const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
   bgGrad.addColorStop(0, '#F7EFE5');
@@ -561,6 +843,9 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
   ctx.arc(w / 2, h / 2 - 10, 198, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+
+  // Слой 'back' (позади упаковки и цветов)
+  accs.filter((a) => a.z === 'back').forEach((a) => drawAccessoryOnCanvas(ctx, a, isPhotoMode));
 
   const wrap = WRAPPINGS.find((wp) => wp.id === draft.wrappingId) || WRAPPINGS[0];
   const ribbon = RIBBONS.find((rb) => rb.id === draft.ribbonId) || RIBBONS[0];
@@ -620,7 +905,7 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
 
     ctx.drawImage(img, -drawW / 2, -drawH + 55, drawW, drawH);
 
-    if (!isPhotoMode && stem.id === selectedStemId) {
+    if (!isPhotoMode && selectedItem?.kind === 'stem' && selectedItem?.id === stem.id) {
       ctx.strokeStyle = '#D98A7C';
       ctx.lineWidth = 3;
       ctx.setLineDash([6, 5]);
@@ -630,6 +915,9 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     }
     ctx.restore();
   });
+
+  // Слой 'mid' (внутри букета поверх цветов, но под передним отворотом упаковки)
+  accs.filter((a) => a.z === 'mid').forEach((a) => drawAccessoryOnCanvas(ctx, a, isPhotoMode));
 
   if (wrap.type !== 'none') {
     ctx.save();
@@ -717,6 +1005,9 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     ctx.restore();
   }
 
+  // Слой 'front' (поверх всего)
+  accs.filter((a) => a.z === 'front').forEach((a) => drawAccessoryOnCanvas(ctx, a, isPhotoMode));
+
   if (isPhotoMode) {
     ctx.save();
     ctx.fillStyle = 'rgba(74, 62, 57, 0.5)';
@@ -725,6 +1016,270 @@ function drawBouquetCanvas(ctx, canvas, isPhotoMode = false) {
     ctx.fillText(`${gameState.shopName || 'Fleur Atelier'} 🌸`, w - 20, h - 18);
     ctx.restore();
   }
+}
+
+function drawHeartBalloon(ctx, x, y, knotX, knotY, angle = 0.14) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(190, 145, 135, 0.78)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 36);
+  ctx.quadraticCurveTo((x + knotX) / 2 - 20, (y + knotY) / 2, knotX, knotY);
+  ctx.stroke();
+
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  const grad = ctx.createRadialGradient(-10, -14, 6, 0, 0, 52);
+  grad.addColorStop(0, '#FFB5C2');
+  grad.addColorStop(0.55, '#EB7387');
+  grad.addColorStop(1, '#C94D63');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.bezierCurveTo(-18, -36, -48, -14, -36, 14);
+  ctx.bezierCurveTo(-24, 34, 0, 44, 0, 44);
+  ctx.bezierCurveTo(0, 44, 24, 34, 36, 14);
+  ctx.bezierCurveTo(48, -14, 18, -36, 0, -12);
+  ctx.fill();
+  ctx.strokeStyle = '#B84257';
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.beginPath();
+  ctx.ellipse(-16, -8, 6, 11, -0.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBalloonCluster(ctx, x, y, knotX, knotY, angle = 0) {
+  const balloons = [
+    { dx: -18, dy: 14, r: 24, c1: '#F9D6DC', c2: '#E39AA8' },
+    { dx: 20, dy: 10, r: 23, c1: '#DDECDD', c2: '#9BBF9E' },
+    { dx: 0, dy: -16, r: 27, c1: '#FFF5DF', c2: '#E5C487' }
+  ];
+  ctx.save();
+  balloons.forEach((b) => {
+    ctx.strokeStyle = 'rgba(180, 160, 145, 0.72)';
+    ctx.lineWidth = 1.7;
+    ctx.beginPath();
+    ctx.moveTo(x + b.dx, y + b.dy + b.r);
+    ctx.quadraticCurveTo((x + b.dx + knotX) / 2 + 15, (y + knotY) / 2, knotX, knotY);
+    ctx.stroke();
+  });
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  balloons.forEach((b) => {
+    const bx = b.dx;
+    const by = b.dy;
+    const g = ctx.createRadialGradient(bx - 7, by - 8, 4, bx, by, b.r);
+    g.addColorStop(0, '#FFFFFF');
+    g.addColorStop(0.35, b.c1);
+    g.addColorStop(1, b.c2);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(bx, by, b.r * 0.88, b.r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.ellipse(bx - 8, by - 9, 4, 7, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawGreetingCard(ctx, x, y, angle = 0.24) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.shadowColor = 'rgba(74, 62, 57, 0.16)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#FFFDF7';
+  ctx.strokeStyle = '#DFCBB8';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-28, -36, 56, 72, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = '#D6B99F';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-16, -16);
+  ctx.lineTo(16, -16);
+  ctx.moveTo(-16, -6);
+  ctx.lineTo(12, -6);
+  ctx.moveTo(-16, 4);
+  ctx.lineTo(14, 4);
+  ctx.stroke();
+
+  ctx.fillStyle = '#E47B8B';
+  ctx.beginPath();
+  ctx.arc(0, 20, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPlushBear(ctx, x, y, angle = -0.1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#B87E52';
+  ctx.beginPath();
+  ctx.arc(-22, -30, 12, 0, Math.PI * 2);
+  ctx.arc(22, -30, 12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#E6BFA0';
+  ctx.beginPath();
+  ctx.arc(-22, -30, 6.5, 0, Math.PI * 2);
+  ctx.arc(22, -30, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#C98E60';
+  ctx.beginPath();
+  ctx.ellipse(0, 24, 26, 28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#EAD0B5';
+  ctx.beginPath();
+  ctx.ellipse(0, 26, 15, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#B87E52';
+  ctx.beginPath();
+  ctx.ellipse(-25, 18, 10, 14, 0.4, 0, Math.PI * 2);
+  ctx.ellipse(25, 18, 10, 14, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#D49A6E';
+  ctx.beginPath();
+  ctx.arc(0, -10, 25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#F3DCC4';
+  ctx.beginPath();
+  ctx.ellipse(0, -4, 12, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#4A362C';
+  ctx.beginPath();
+  ctx.ellipse(0, -7, 4.5, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-9, -15, 2.8, 0, Math.PI * 2);
+  ctx.arc(9, -15, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#E47B8B';
+  ctx.beginPath();
+  ctx.ellipse(-9, 13, 8, 5, -0.25, 0, Math.PI * 2);
+  ctx.ellipse(9, 13, 8, 5, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 13, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPlushBunny(ctx, x, y, angle = 0.1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#F5EFE9';
+  ctx.strokeStyle = '#D7CCC2';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(-12, -38, 7.5, 22, -0.18, 0, Math.PI * 2);
+  ctx.ellipse(12, -38, 7.5, 22, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#F5C4CC';
+  ctx.beginPath();
+  ctx.ellipse(-12, -38, 3.8, 14, -0.18, 0, Math.PI * 2);
+  ctx.ellipse(12, -38, 3.8, 14, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#FAF6F2';
+  ctx.beginPath();
+  ctx.ellipse(0, 24, 24, 27, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, -8, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#4A3E39';
+  ctx.beginPath();
+  ctx.arc(-8, -11, 2.5, 0, Math.PI * 2);
+  ctx.arc(8, -11, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#F29AA4';
+  ctx.beginPath();
+  ctx.ellipse(0, -5, 3.5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#9BB89D';
+  ctx.beginPath();
+  ctx.roundRect(-18, 8, 36, 10, 5);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(4, 14, 11, 18, 4);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawChocolatesBox(ctx, x, y, angle = -0.06) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.shadowColor = 'rgba(74, 62, 57, 0.16)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#7C4538';
+  ctx.strokeStyle = '#572D23';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-36, -24, 72, 48, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#E6BE6C';
+  ctx.fillRect(-5, -24, 10, 48);
+  ctx.fillRect(-36, -4, 72, 8);
+  ctx.beginPath();
+  ctx.ellipse(-9, -6, 9, 5, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(9, -6, 9, 5, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, -6, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFF5D6';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMacaronsBox(ctx, x, y, angle = 0.06) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.shadowColor = 'rgba(74, 62, 57, 0.15)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#FDF4F0';
+  ctx.strokeStyle = '#E0B9AE';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-38, -24, 76, 48, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#FFFDFB';
+  ctx.beginPath();
+  ctx.roundRect(-30, -16, 60, 32, 5);
+  ctx.fill();
+
+  const colors = ['#F29AA4', '#A5CCA7', '#F6D68A', '#C8AEE0'];
+  colors.forEach((c, idx) => {
+    const mx = -21 + idx * 14;
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.roundRect(mx - 5, -10, 10, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#FFFDF9';
+    ctx.fillRect(mx - 5, -1, 10, 2.5);
+  });
+  ctx.restore();
 }
 
 function returnStemToInventory(stem) {
@@ -757,7 +1312,14 @@ function describeBouquet(draft) {
     .map(([name, qty]) => `${name} (${qty})`)
     .join(', ');
   const wrap = WRAPPINGS.find((w) => w.id === draft.wrappingId)?.name || '';
-  return `${list}${wrap && wrap !== 'Без упаковки' ? ` • ${wrap}` : ''}`;
+  const accNames = (draft.accessories || [])
+    .map((item) => {
+      const m = ACCESSORIES_CATALOG[getAccTypeId(item)];
+      return m ? `${m.icon} ${m.shortName}` : '';
+    })
+    .filter(Boolean);
+  const accText = accNames.length ? ` + ${accNames.join(', ')}` : '';
+  return `${list}${wrap && wrap !== 'Без упаковки' ? ` • ${wrap}` : ''}${accText}`;
 }
 
 function showPolaroidModal(dataUrl, price) {

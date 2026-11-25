@@ -34,10 +34,12 @@ let ambientStarted = false;
 let activeToastTimer = null;
 let currentNavTab = 'shop';
 let clockTimerId = null;
-let isAutoDmPending = false;
+let isClientDmPending = false;
+let isEmployeeDmPending = false;
+let isJobDmPending = false;
 let isTeamTickPending = false;
-let nextAutoDmRealMs = Date.now() + 35000;
-let nextEmployeeDmRealMs = Date.now() + 240000;
+let nextAutoDmRealMs = Date.now() + 28000;
+let nextEmployeeDmRealMs = Date.now() + 65000;
 let nextFranchiseTickRealMs = Date.now() + 75000;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -484,9 +486,9 @@ async function processActiveDeliveries() {
   }
 }
 
-/** Сотрудники изредка пишут в Direct без повода (только если не заняты доставкой/закупкой!) */
+/** Сотрудники периодически пишут в Direct (только если не заняты доставкой/закупкой!) */
 async function maybeReceiveEmployeeSpontaneousDm() {
-  if (isAutoDmPending || isTeamTickPending) return;
+  if (isEmployeeDmPending || isTeamTickPending) return;
   const now = Date.now();
   if (now < nextEmployeeDmRealMs) return;
 
@@ -507,21 +509,22 @@ async function maybeReceiveEmployeeSpontaneousDm() {
   if (!freeEmployees.length) return;
 
   const unreadCount = (gameState.directMessages || []).filter((m) => !m.read).length;
-  if (unreadCount >= 4) {
-    nextEmployeeDmRealMs = now + 90000;
+  if (unreadCount >= 10) {
+    nextEmployeeDmRealMs = now + 40000;
     return;
   }
 
-  // Редко: раз в 5–9 минут реального времени
-  nextEmployeeDmRealMs = now + 300000 + Math.floor(Math.random() * 240000);
+  nextEmployeeDmRealMs = now + 150000 + Math.floor(Math.random() * 90000);
   const emp = freeEmployees[Math.floor(Math.random() * freeEmployees.length)];
+  const existingEmpDm = (gameState.directMessages || []).find((m) => m.kind === 'employee' && m.employeeId === emp.id);
 
-  isAutoDmPending = true;
+  isEmployeeDmPending = true;
   try {
-    const text = await generateEmployeeSpontaneousDm(emp);
+    const text = await generateEmployeeSpontaneousDm(emp, existingEmpDm?.thread || []);
     const dm = ensureEmployeeDmThread(emp);
     dm.thread.push({ sender: 'client', text });
     dm.text = text;
+    dm.createdTimeLabel = formatMinutesAsTime(gameState.timeMinutes || 540);
     dm.read = false;
     saveState();
     updateHud();
@@ -530,14 +533,15 @@ async function maybeReceiveEmployeeSpontaneousDm() {
     refreshActiveTabIfSafe();
   } catch (err) {
     console.warn('Не удалось получить авто-сообщение сотрудника:', err);
+    nextEmployeeDmRealMs = Date.now() + 30000;
   } finally {
-    isAutoDmPending = false;
+    isEmployeeDmPending = false;
   }
 }
 
 /** Автоматический отклик кандидатов на открытые вакансии в случайный момент */
 async function maybeReceiveJobCandidateDm() {
-  if (isAutoDmPending) return;
+  if (isJobDmPending) return;
   const openJobs = (gameState.jobPostings || []).filter((j) => j.status === 'open');
   if (!openJobs.length) return;
 
@@ -564,7 +568,7 @@ async function maybeReceiveJobCandidateDm() {
   });
   if (!dueJob) return;
 
-  isAutoDmPending = true;
+  isJobDmPending = true;
   try {
     const dm = await generateJobCandidateDm(dueJob);
     dueJob.respondedCount = (dueJob.respondedCount || 0) + 1;
@@ -584,25 +588,25 @@ async function maybeReceiveJobCandidateDm() {
   } catch (err) {
     console.warn('Не удалось получить отклик кандидата:', err);
   } finally {
-    isAutoDmPending = false;
+    isJobDmPending = false;
   }
 }
 
 /** Автоматический приход сообщений и предзаказов в Direct по ходу дня */
 async function maybeReceiveAutoDirectMessage() {
-  if (isAutoDmPending) return;
+  if (isClientDmPending) return;
 
   const now = Date.now();
   if (now < nextAutoDmRealMs) return;
 
   const unreadCount = gameState.directMessages.filter((m) => !m.read).length;
-  if (unreadCount >= 4) {
-    nextAutoDmRealMs = now + 35000;
+  if (unreadCount >= 10) {
+    nextAutoDmRealMs = now + 25000;
     return;
   }
 
-  nextAutoDmRealMs = now + 55000 + Math.floor(Math.random() * 55000);
-  isAutoDmPending = true;
+  nextAutoDmRealMs = now + 75000 + Math.floor(Math.random() * 55000);
+  isClientDmPending = true;
 
   try {
     const dm = await generateDirectMessage();
@@ -640,8 +644,9 @@ async function maybeReceiveAutoDirectMessage() {
     }
   } catch (err) {
     console.warn('Не удалось получить авто-сообщение Direct:', err);
+    nextAutoDmRealMs = Date.now() + 20000;
   } finally {
-    isAutoDmPending = false;
+    isClientDmPending = false;
   }
 }
 

@@ -626,3 +626,8 @@
   background: var(--bg-sage-soft);
   border-color: var(--sage);
 }
+
+.dm-list-item.pinned {
+  border-color: #D9B47E;
+  background: #FFFBF3;
+}

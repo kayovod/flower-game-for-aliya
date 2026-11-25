@@ -3,8 +3,8 @@
  * Модальное окно осмотра вазы: смена воды, уценка, списание и добавление в букет
  */
 
-import { FLOWERS_CATALOG } from '/js/config.js';
-import { getSingleFlowerWrappedSvg } from '/js/graphics/flowersSvg.js';
+import { FLOWERS_CATALOG } from '../../config.js';
+import { getSingleFlowerWrappedSvg } from '../../graphics/flowersSvg.js';
 
 export function getActualFlowerPrice(item, meta) {
   return item.discounted ? Math.round(meta.price * 0.6) : meta.price;

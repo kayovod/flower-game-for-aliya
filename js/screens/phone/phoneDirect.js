@@ -1,6 +1,6 @@
 /**
  * js/screens/phone/phoneDirect.js
- * Чаты Direct: клиенты, доставка, собеседования, общение с командой и повтор при сбое ИИ
+ * Чаты Direct: клиенты, доставка, собеседования, общение с командой, закрепление чатов и повтор при сбое ИИ
  */
 
 import {
@@ -10,7 +10,7 @@ import {
   getGameDateObj,
   getHolidayForDate
 } from '../../config.js';
-import { gameState, saveState, addGameMinutes, isShopClosedNow } from '../../state.js';
+import { gameState, saveState, addGameMinutes, isShopClosedNow, sortDirectMessages } from '../../state.js';
 import { getFlowerSvgDataUrl } from '../../graphics/flowersSvg.js';
 import {
   generateDirectMessage,
@@ -52,10 +52,38 @@ function clearDmRetryErrors(dm) {
 export function renderDirectApp(body, onHudUpdate, showToast, onRefreshPhone) {
   const refresh = onRefreshPhone || (() => renderDirectApp(body, onHudUpdate, showToast, onRefreshPhone));
 
+  const syncPinButton = () => {
+    if (!openedDmId) return;
+    const dm = gameState.directMessages.find((m) => m.id === openedDmId);
+    const topbar = body.querySelector('.dm-chat-topbar');
+    if (!dm || !topbar || topbar.querySelector('#btn-dm-pin-toggle')) return;
+
+    const pinBtn = document.createElement('button');
+    pinBtn.id = 'btn-dm-pin-toggle';
+    pinBtn.className = `btn ${dm.pinned ? 'btn-primary' : 'btn-soft'}`;
+    pinBtn.style.cssText = `padding:5px 8px; font-size:11px; flex-shrink:0; opacity:${dm.pinned ? '1' : '0.72'};`;
+    pinBtn.textContent = '📌';
+    pinBtn.title = dm.pinned ? 'Открепить чат' : 'Закрепить чат наверху';
+    pinBtn.addEventListener('click', () => {
+      dm.pinned = !dm.pinned;
+      sortDirectMessages();
+      saveState();
+      showToast(dm.pinned ? '📌 Чат закреплён наверху!' : 'Чат откреплён');
+      refresh();
+    });
+    topbar.appendChild(pinBtn);
+  };
+
+  if (!body._pinObs) {
+    body._pinObs = new MutationObserver(syncPinButton);
+    body._pinObs.observe(body, { childList: true });
+  }
+
   if (openedDmId) {
     const activeDm = gameState.directMessages.find((m) => m.id === openedDmId);
     if (activeDm) {
       renderOpenedDmChat(activeDm, body, onHudUpdate, showToast, refresh);
+      syncPinButton();
       return;
     }
     openedDmId = null;
@@ -204,14 +232,14 @@ function renderDmListItem(dm) {
   }
 
   return `
-    <div class="dm-list-item ${!dm.read ? 'unread' : ''}" data-open-dm="${dm.id}">
+    <div class="dm-list-item ${!dm.read ? 'unread' : ''} ${dm.pinned ? 'pinned' : ''}" data-open-dm="${dm.id}">
       <div class="dm-list-avatar">
         ${icon}
         ${!dm.read ? '<span class="dm-unread-dot"></span>' : ''}
       </div>
       <div style="flex:1; min-width:0;">
         <div class="row-between">
-          <strong style="font-size:13px;">${escapeHtml(dm.senderName)}</strong>
+          <strong style="font-size:13px;">${dm.pinned ? '📌 ' : ''}${escapeHtml(dm.senderName)}</strong>
           <span class="badge ${statusClass}" style="font-size:10px;">${statusText}</span>
         </div>
         <div class="dm-list-preview">${escapeHtml(lastMsg)}</div>
@@ -1609,6 +1637,7 @@ function trimDirectMessages() {
   if (gameState.directMessages.length <= 16) return;
   const keepImportant = gameState.directMessages.filter(
     (m) =>
+      m.pinned ||
       !m.read ||
       m.kind === 'employee' ||
       (m.order && m.order.accepted && !m.order.done) ||
@@ -1616,6 +1645,7 @@ function trimDirectMessages() {
   );
   const others = gameState.directMessages.filter(
     (m) =>
+      !m.pinned &&
       m.read &&
       m.kind !== 'employee' &&
       !(m.order && m.order.accepted && !m.order.done) &&

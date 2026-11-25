@@ -538,30 +538,22 @@ export function renderShopDecorVisuals() {
     `);
   }
 
-  const accShelfHtml = renderShopAccessoriesBar(gameState.shopLocationId);
-  if (!wallItems.length && !floorItems.length && !accShelfHtml) return '';
+  if (!wallItems.length && !floorItems.length) return '';
 
   return `
-    ${
-      wallItems.length || floorItems.length
-        ? `
-      <div class="shop-decor-stage">
-        ${wallItems.length ? `<div class="shop-wall-objects">${wallItems.join('')}</div>` : ''}
-        ${
-          floorItems.length
-            ? `
-          <div class="shop-floor-shelf-wrap">
-            <div class="shop-floor-objects">${floorItems.join('')}</div>
-            <div class="shop-shelf-plank"></div>
-          </div>
-        `
-            : ''
-        }
-      </div>
-    `
-        : ''
-    }
-    ${accShelfHtml}
+    <div class="shop-decor-stage">
+      ${wallItems.length ? `<div class="shop-wall-objects">${wallItems.join('')}</div>` : ''}
+      ${
+        floorItems.length
+          ? `
+        <div class="shop-floor-shelf-wrap">
+          <div class="shop-floor-objects">${floorItems.join('')}</div>
+          <div class="shop-shelf-plank"></div>
+        </div>
+      `
+          : ''
+      }
+    </div>
   `;
 }
 

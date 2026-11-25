@@ -19,8 +19,7 @@ export {
   getBadgeRuleText,
   detectMentionedFlowers,
   pickRandom,
-  pickUnused,
-  generateProceduralNick
+  pickUnused
 } from './ai/aiCore.js';
 
 // 2. Генерация клиентов зала и системные промпты
@@ -51,6 +50,7 @@ export {
 // 5. Команда: живое общение в Direct и лавке, доставка и форс-мажоры курьера
 export {
   generateEmployeeSpontaneousDm,
+  generateSalaryChangeReaction,
   generateEmployeeChatReply,
   generateCourierForceMajeure,
   resolveCourierForceMajeureReply,

@@ -5,13 +5,13 @@
 
 import { WEATHERS } from '../config.js';
 import { gameState } from '../state.js';
-import { callAI, stripCodeFences, formatMinutesAsTime } from './aiCore.js';
-
+import { callAI, stripCodeFences, formatMinutesAsTime, getBadgeRuleText } from './aiCore.js';
 function getBranchContext(branchMeta, branchState, emp) {
   const weatherLabel = WEATHERS.find((w) => w.id === gameState.weather)?.label || 'Ясно';
   const genderWord = emp.gender === 'female' ? 'женщина (пиши в женском роде)' : 'мужчина (пиши в мужском роде)';
   return `Сеть цветочных магазинов «${gameState.shopName || 'Fleur Atelier'}».
 Филиал: «${branchMeta.name}» (${branchMeta.interiorDesc}).
+Владелец: ${getBadgeRuleText()}
 Сотрудник на точке: ${emp.name}, ${emp.age} лет (${genderWord}), должность: ${emp.roleName}, характер: ${emp.quirk || 'живой и ответственный'}.
 На улице: ${weatherLabel}, время ${formatMinutesAsTime(gameState.timeMinutes || 540)}, заработано сегодня на точке: ${branchState.todayEarned || 0} ₽.`;
 }

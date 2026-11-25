@@ -9,7 +9,6 @@ import {
   callAI,
   stripCodeFences,
   pickRandom,
-  generateProceduralNick,
   isRudeText,
   formatMinutesAsTime,
   detectMentionedFlowers,
@@ -213,34 +212,50 @@ export async function generateDirectMessage() {
     .map((a) => `${a.id} («${a.name}», ~${a.price} ₽)`)
     .join('; ');
 
-  const minWindow = formatMinutesAsTime(curMin + 25);
+ const minWindow = formatMinutesAsTime(curMin + 25);
   const maxWindow = formatMinutesAsTime(closeMin - 15);
   const badgeName = String(gameState.playerBadgeName || '').trim();
   const knowsMasterName = Boolean(badgeName) && Math.random() < 0.35;
   const seed = Math.floor(10000 + Math.random() * 89999);
 
+  const kindRoll = Math.random();
+  let forcedKind = 'question';
+  if (canDelivery) {
+    forcedKind = kindRoll < 0.36 ? 'delivery' : kindRoll < 0.68 ? 'preorder' : kindRoll < 0.85 ? 'question' : 'review';
+  } else if (canPreorder) {
+    forcedKind = kindRoll < 0.56 ? 'preorder' : kindRoll < 0.8 ? 'question' : 'review';
+  } else {
+    forcedKind = kindRoll < 0.65 ? 'question' : 'review';
+  }
+
+  const kindInstruction =
+    forcedKind === 'delivery'
+      ? 'ОБЯЗАТЕЛЬНО выбери "kind": "delivery" — клиент заказывает ДОСТАВКУ КУРЬЕРОМ НА ДОМ к конкретному времени (придумай сам реальный адрес, примечание для курьера, сорт и разное количество цветов: 1, 3, 5, 7, 9, 11, 15, 21 и т.д.).'
+      : forcedKind === 'preorder'
+      ? 'ОБЯЗАТЕЛЬНО выбери "kind": "preorder" — клиент заказывает САМОВЫВОЗ к конкретному времени (сам выбери цветок, количество от 1 до 25 и адекватный бюджет).'
+      : forcedKind === 'review'
+      ? 'ОБЯЗАТЕЛЬНО выбери "kind": "review" — живой искренний отзыв или комментарий о магазине/букете.'
+      : 'ОБЯЗАТЕЛЬНО выбери "kind": "question" — живой нестандартный вопрос про уход, наличие, доставку, букеты или подарки.';
+
   const prompt = `Сгенерируй ОДНО совершенно уникальное входящее сообщение в Direct для цветочного магазина "${gameState.shopName || 'Fleur Atelier'}" (подписчиков: ${gameState.followers}, сейчас время: ${formatMinutesAsTime(curMin)}, seed=${seed}).
 
-Выбери ОДИН случайный тип:
-${canDelivery ? `- "delivery": клиент просит ДОСТАВКУ КУРЬЕРОМ НА ДОМ к конкретному времени (придумай сам адрес, повод, заметку для курьера, сорт и разное количество цветов: может быть 1, 3, 7, 9, 11, 15, 21 и т.д.!).` : ''}
-${canPreorder ? `- "preorder": клиент просит САМОВЫВОЗ к конкретному времени (сам выбери цветок, любое количество стеблей от 1 до 25 и адекватный бюджет).` : ''}
-- "question": живой нестандартный вопрос про уход, наличие, доставку, букеты или подарки.
-- "review": живой отзыв или комментарий о магазине.
+${kindInstruction}
+${knowsMasterName ? getBadgeRuleText() : ''}
 
 ПРАВИЛА ДЛЯ ЗАКАЗОВ (если kind="delivery" или "preorder"):
 - typeId: выбери любой подходящий из каталога: ${flowersListText}.
 - qty: ПРИДУМАЙ РАЗНОЕ количество (НЕ пиши всем одинаково, чередуй маленькие, средние и пышные букеты!).
 - accessoryId: иногда (примерно в 25% случаев) добавь подарок: ${accListText}, иначе null.
-- dueTime: выбери ЛЮБОЕ точное время в формате "HH:MM" в интервале от ${minWindow} до ${maxWindow} (не округляй постоянно к :15! Можно 10:40, 12:25, 15:10, 18:45 и т.п.). ИЗБЕГАЙ уже занятого времени: ${usedTimes.join(', ') || 'нет'}.
+- dueTime: выбери ЛЮБОЕ точное время в формате "HH:MM" в интервале от ${minWindow} до ${maxWindow} (можно 10:40, 12:25, 15:10, 18:45 и т.п.). ИЗБЕГАЙ уже занятого времени: ${usedTimes.join(', ') || 'нет'}.
 - reward: посчитай реалистичный бюджет клиента в рублях (примерно цена цветов * qty + 150..350 ₽ за оформление${canDelivery ? ' + ~250 ₽ за доставку если delivery' : ''}).
 - В самом "text" сообщения обязательно живым языком назови, что хочешь, к какому времени, бюджет и (если delivery) адрес!
 
-Никаких шаблонов и упоминаний кнопок! Придумай каждый раз абсолютно новый ник обычного человека (без повторов: ${usedNicks.join(', ') || 'нет'}, без Смирновой и слов flowers/buket/flora).
+Никаких шаблонов и упоминаний кнопок! Придумай каждый раз абсолютно новый реалистичный ник обычного человека (НЕ копируй пример @katya_m94, без повторов: ${usedNicks.join(', ') || 'нет'}, без Смирновой и слов flowers/buket/flora).
 
 ОТВЕЧАЙ СТРОГО ОДНИМ JSON БЕЗ MARKDOWN:
 {
-  "senderName": "@уникальный_ник",
-  "kind": "${canDelivery ? 'delivery | preorder | question | review' : canPreorder ? 'preorder | question | review' : 'question | review'}",
+  "senderName": "@katya_m94",
+  "kind": "${forcedKind}",
   "typeId": "rose_red",
   "qty": 7,
   "accessoryId": null,
@@ -266,8 +281,8 @@ ${canPreorder ? `- "preorder": клиент просит САМОВЫВОЗ к �
   let senderName = String(parsed.senderName || '').trim().replace(/\s+/g, '_');
   if (senderName && !senderName.startsWith('@')) senderName = '@' + senderName;
   const lowerSender = senderName.toLowerCase();
-  if (!senderName || senderName.length < 3 || lowerSender.includes('уникальный') || lowerSender.includes('smirnova') || lowerSender.includes('смирнова')) {
-    senderName = generateProceduralNick(usedSet);
+  if (!senderName || senderName.length < 3 || lowerSender.includes('уникальный') || lowerSender === '@katya_m94' || lowerSender.includes('smirnova') || lowerSender.includes('смирнова')) {
+    throw new Error('ИИ вернул некорректный ник для Direct, попробуй ещё раз');
   } else if (usedSet.has(lowerSender)) {
     senderName = `${senderName}${10 + Math.floor(Math.random() * 89)}`;
   }

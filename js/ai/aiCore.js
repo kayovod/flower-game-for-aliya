@@ -273,18 +273,3 @@ export function pickUnused(pool, usedList) {
   const source = fresh.length > 0 ? fresh : pool;
   return pickRandom(source);
 }
-
-export function generateProceduralNick(usedSet = new Set()) {
-  const bases = [
-    'nika', 'kira', 'denis', 'artem', 'valeriya', 'pavel', 'milana', 'timur',
-    'sofa', 'gleb', 'alina', 'roman', 'dasha', 'egor', 'polina', 'nikita',
-    'yulia', 'anton', 'kristina', 'vlad', 'vera', 'boris', 'tanya', 'misha',
-    'sveta', 'ilya', 'yana', 'kostya', 'inna', 'stas', 'liza', 'oleg'
-  ];
-  const suffixes = ['_m', '.k', '_spb', '.v', '97', '03', '_life', '.art', '_msk', '88', '_daily', ''];
-  for (let i = 0; i < 40; i++) {
-    const nick = `@${pickRandom(bases)}${pickRandom(suffixes)}`;
-    if (!usedSet.has(nick.toLowerCase())) return nick;
-  }
-  return `@guest_${100 + Math.floor(Math.random() * 899)}`;
-}

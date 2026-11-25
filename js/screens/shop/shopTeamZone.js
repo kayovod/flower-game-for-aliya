@@ -3,8 +3,8 @@
  * Компактная зона доставок курьером в торговом зале (общение и поручения — в Direct!)
  */
 
-import { gameState, saveState } from '/js/state.js';
-import { playPaperSound } from '/js/sound.js';
+import { gameState, saveState } from '../../state.js';
+import { playPaperSound } from '../../sound.js';
 
 let pickingDeliveryId = null;
 

@@ -8,6 +8,8 @@ import {
   getWeatherForSeason
 } from './config.js';
 
+const dmThreadLenMap = new WeakMap();
+
 export function createInitialInventory() {
   return [
     { uid: 'vase_1', typeId: 'rose_red', qty: 12, freshness: 95, discounted: false, wateredThisShift: false },
@@ -57,7 +59,8 @@ export function createInitialState() {
     currentBouquet: {
       stems: [],
       wrappingId: 'craft',
-      ribbonId: 'satin_rose'
+      ribbonId: 'satin_rose',
+      accessories: []
     },
     instaPosts: [],
     activePromo: null,
@@ -103,6 +106,15 @@ export function createInitialAiSettings() {
 export let gameState = loadState();
 export let aiSettings = loadAiSettings();
 
+export function sortDirectMessages(list = gameState?.directMessages) {
+  if (!Array.isArray(list)) return;
+  list.sort((a, b) => {
+    const pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+    if (pinDiff !== 0) return pinDiff;
+    return (Number(b.lastActivityMs) || 0) - (Number(a.lastActivityMs) || 0);
+  });
+}
+
 export function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -128,15 +140,23 @@ export function loadState() {
     if (!Array.isArray(state.franchises)) state.franchises = [];
     if (!Array.isArray(state.franchiseLedger)) state.franchiseLedger = [];
     if (typeof state.lastAutoDmKey !== 'string') state.lastAutoDmKey = '';
-    state.directMessages = state.directMessages.map((dm) => ({
-      read: Boolean(dm.replyText || dm.rejected || (dm.order && dm.order.done)),
-      thread: Array.isArray(dm.thread) ? dm.thread : [],
-      blockedByPlayer: Boolean(dm.blockedByPlayer),
-      blockedByClient: Boolean(dm.blockedByClient),
-      jobApplication: dm.jobApplication || null,
-      employeeId: dm.employeeId || null,
-      ...dm
-    }));
+    const baseNow = Date.now();
+    state.directMessages = state.directMessages.map((dm, idx) => {
+      const normalized = {
+        read: Boolean(dm.replyText || dm.rejected || (dm.order && dm.order.done)),
+        thread: Array.isArray(dm.thread) ? dm.thread : [],
+        blockedByPlayer: Boolean(dm.blockedByPlayer),
+        blockedByClient: Boolean(dm.blockedByClient),
+        jobApplication: dm.jobApplication || null,
+        employeeId: dm.employeeId || null,
+        pinned: Boolean(dm.pinned),
+        lastActivityMs: Number(dm.lastActivityMs) || (baseNow - idx * 1000),
+        ...dm
+      };
+      dmThreadLenMap.set(normalized, normalized.thread.length);
+      return normalized;
+    });
+    sortDirectMessages(state.directMessages);
     if (!Array.isArray(state.wholesaleDeals)) state.wholesaleDeals = [];
     if (!Array.isArray(state.decor)) state.decor = [];
     if (!Array.isArray(state.decorInventory)) state.decorInventory = [];
@@ -152,7 +172,9 @@ export function loadState() {
     if (!Array.isArray(state.rareShopIds)) state.rareShopIds = [];
 
     if (!state.currentBouquet || !Array.isArray(state.currentBouquet.stems)) {
-      state.currentBouquet = { stems: [], wrappingId: 'craft', ribbonId: 'satin_rose' };
+      state.currentBouquet = { stems: [], wrappingId: 'craft', ribbonId: 'satin_rose', accessories: [] };
+    } else if (!Array.isArray(state.currentBouquet.accessories)) {
+      state.currentBouquet.accessories = [];
     }
     if (typeof state.timeMinutes !== 'number') {
       state.timeMinutes = (state.openHour || 9) * 60;
@@ -203,6 +225,26 @@ export function getTotalGameMinutes() {
 }
 
 export function saveState() {
+  if (Array.isArray(gameState.directMessages)) {
+    let needsSort = false;
+    gameState.directMessages.forEach((dm) => {
+      const len = Array.isArray(dm.thread) ? dm.thread.length : (dm.text ? 1 : 0);
+      if (!dm.lastActivityMs) {
+        dm.lastActivityMs = Date.now();
+        dmThreadLenMap.set(dm, len);
+        needsSort = true;
+      } else if (!dmThreadLenMap.has(dm)) {
+        dmThreadLenMap.set(dm, len);
+      } else if (len > dmThreadLenMap.get(dm)) {
+        dmThreadLenMap.set(dm, len);
+        dm.lastActivityMs = Date.now();
+        needsSort = true;
+      }
+    });
+    if (needsSort) {
+      sortDirectMessages();
+    }
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
   } catch (err) {

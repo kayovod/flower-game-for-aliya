@@ -5,6 +5,7 @@
 
 import {
   FLOWERS_CATALOG,
+  ACCESSORIES_CATALOG,
   TIME_PERIODS,
   WEATHERS,
   DECOR_CATALOG,
@@ -14,11 +15,11 @@ import {
   getHolidayForDate,
   AI_PROVIDERS,
   AI_SETTINGS_KEY
-} from '/js/config.js';
-import { gameState, aiSettings, saveState, advanceShift, isShopClosedNow } from '/js/state.js';
-import { getFlowerInVaseSvg } from '/js/graphics/flowersSvg.js';
-import { renderBouquetMaker, addFlowerToDraftBouquet } from '/js/screens/bouquetMaker.js';
-import { playBellSound, playPaperSound } from '/js/sound.js';
+} from '../config.js';
+import { gameState, aiSettings, saveState, advanceShift, isShopClosedNow } from '../state.js';
+import { getFlowerInVaseSvg } from '../graphics/flowersSvg.js';
+import { renderBouquetMaker, addFlowerToDraftBouquet } from './bouquetMaker.js';
+import { playBellSound, playPaperSound } from '../sound.js';
 
 import {
   renderShopTopDecor,
@@ -26,7 +27,7 @@ import {
   renderShopArchDetails,
   renderShopWindowScenery,
   renderWeatherParticles
-} from '/js/graphics/shopScenerySvg.js';
+} from '../graphics/shopScenerySvg.js';
 import {
   checkPreorderArrival,
   isClientTalkingNow,
@@ -40,10 +41,12 @@ import {
   toggleOfferDrawer,
   toggleRejectPanel,
   closeRejectPanel,
-  getActiveClient
-} from '/js/screens/shop/shopClientZone.js';
-import { renderInspectorModal, getActualFlowerPrice } from '/js/screens/shop/shopInspector.js';
-import { renderShopTeamZone, bindShopTeamEvents } from '/js/screens/shop/shopTeamZone.js';
+  getActiveClient,
+  getVaseFreshnessWord,
+  consumePendingScrollToClient
+} from './shop/shopClientZone.js';
+import { renderInspectorModal, getActualFlowerPrice } from './shop/shopInspector.js';
+import { renderShopTeamZone, bindShopTeamEvents } from './shop/shopTeamZone.js';
 
 let selectedVaseUid = null;
 let shopSubTab = 'hall'; // 'hall' | 'bouquet'
@@ -58,6 +61,9 @@ export function isBouquetMakerOpen() {
 export function renderShopScreen(onHudUpdate, showToast) {
   const container = document.getElementById('screen-shop');
   if (!container) return;
+
+  const prevScrollTop = container.scrollTop;
+  const wasAlreadyOnHall = Boolean(document.getElementById('shop-subtab-content') && shopSubTab === 'hall');
 
   const stemsCount = gameState.currentBouquet?.stems?.length || 0;
   const curDate = getGameDateObj(gameState.startDate, gameState.day - 1);
@@ -212,6 +218,17 @@ export function renderShopScreen(onHudUpdate, showToast) {
 
   bindShopEvents(subContent, onHudUpdate, showToast);
   scrollChatToBottom();
+
+  if (consumePendingScrollToClient()) {
+    const anchor = document.getElementById('client-zone-anchor');
+    if (anchor) {
+      const cRect = container.getBoundingClientRect();
+      const aRect = anchor.getBoundingClientRect();
+      container.scrollTop = Math.max(0, container.scrollTop + (aRect.top - cRect.top) - 8);
+    }
+  } else if (wasAlreadyOnHall) {
+    container.scrollTop = prevScrollTop;
+  }
 }
 
 function isShopDecorShown(id) {

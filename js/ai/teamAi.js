@@ -1,6 +1,6 @@
 /**
  * js/ai/teamAi.js
- * 100% ИИ для команды: живое общение в Direct, отчёты флориста, уникальные форс-мажоры и отчёты курьера
+ * 100% ИИ для команды: живое общение в Direct, отчёты флориста, уникальные форс-мажоры, отчёты курьера и реакция на зарплату
  */
 
 import { WEATHERS } from '../config.js';
@@ -8,7 +8,8 @@ import { gameState } from '../state.js';
 import {
   callAI,
   stripCodeFences,
-  formatMinutesAsTime
+  formatMinutesAsTime,
+  getBadgeRuleText
 } from './aiCore.js';
 
 function getEmployeeContext(emp) {
@@ -16,6 +17,8 @@ function getEmployeeContext(emp) {
   const weatherLabel = WEATHERS.find((w) => w.id === gameState.weather)?.label || 'Ясно';
   return `Сотрудник: ${emp.name}, ${emp.age} лет (${genderWord}).
 Должность: ${emp.roleName} в магазине «${gameState.shopName || 'Fleur Atelier'}» (точка «${emp.locationName}»).
+Текущая зарплата: ${emp.salary} ₽/смену.
+Руководитель: ${getBadgeRuleText()} Никогда не выдумывай руководителю другое имя и не путай пол!
 О сотруднике: ${emp.bio || 'сотрудник цветочной лавки'}.
 Характер: ${emp.quirk || 'живой, естественный и искренний'}.
 Личные особенности/требования: ${emp.requirements || 'нет особых требований'}.
@@ -23,18 +26,65 @@ function getEmployeeContext(emp) {
 Сейчас на улице: ${weatherLabel}, время ${formatMinutesAsTime(gameState.timeMinutes || 540)}.`;
 }
 
-export async function generateEmployeeSpontaneousDm(employee) {
+export async function generateEmployeeSpontaneousDm(employee, recentThread = []) {
   const seed = Math.floor(10000 + Math.random() * 89999);
-  const prompt = `Ты — сотрудник цветочного магазина, в спокойную минуту пишешь руководителю в Direct как приятель и коллега (seed=${seed}).
+  const recentText = (recentThread || [])
+    .slice(-8)
+    .map((m) => `${m.sender === 'player' ? 'Руководитель' : m.sender === 'system' ? 'Система' : employee.name}: ${m.text}`)
+    .join('\n');
+
+  const prompt = `Ты — живой сотрудник цветочного магазина, сам решаешь написать руководителю в Direct (seed=${seed}).
 ${getEmployeeContext(employee)}
 
-Напиши 1 короткое, естественное сообщение (1–2 предложения): поделись случайным наблюдением из жизни, забавным моментом с прохожими, мыслью о книге/музыке/кофе или идеей для лавки.
-СТРОГО ЗАПРЕЩЕНО: просить работу или заказы («ну что там заказы есть», «хочу уже поработать», «скучаю без дела», «погода супер чтобы бегать»). Общайся спокойно, как обычный человек без суеты!`;
+Недавняя переписка (учитывай её и НИКОГДА не повторяй темы, вопросы или просьбы, которые уже обсуждались!):
+${recentText || '(переписки ещё не было)'}
+
+На твоё усмотрение (полностью свободно и без шаблонов):
+- можешь просто поболтать о чём-то из жизни, наблюдениях или поделиться мыслью;
+- или задать вопрос по работе лавки, цветам, витрине, заказам;
+- или рассказать о неожиданной реальной ситуации / заминке, которая только что произошла с тобой на смене или в пути, и спросить совета.
+
+Напиши короткое, живое сообщение (1–3 предложения) от первого лица, без JSON!`;
 
   const raw = await callAI([{ role: 'user', content: prompt }]);
   const clean = stripCodeFences(raw).trim();
   if (!clean) throw new Error('ИИ вернул пустое сообщение от сотрудника');
   return clean;
+}
+
+export async function generateSalaryChangeReaction(employee, oldSalary, newSalary, recentThread = []) {
+  const seed = Math.floor(10000 + Math.random() * 89999);
+  const recentText = (recentThread || [])
+    .slice(-6)
+    .map((m) => `${m.sender === 'player' ? 'Руководитель' : m.sender === 'system' ? 'Система' : employee.name}: ${m.text}`)
+    .join('\n');
+
+  const prompt = `Руководитель только что изменил твою ставку в настройках зарплаты (seed=${seed}):
+Было: ${oldSalary} ₽/смену → Стало: ${newSalary} ₽/смену.
+${getEmployeeContext(employee)}
+
+Недавняя переписка:
+${recentText || '(пока не общались)'}
+
+Реши абсолютно естественно, как реальный человек со своим характером:
+- Если ставку повысили — можешь тепло поблагодарить, обрадоваться или скромно принять к сведению.
+- Если ставку урезали — можешь расстроиться, возмутиться, спросить почему так или сдержанно промолчать.
+- Если изменение совсем небольшое или ты занят(а) — можешь вообще ничего не писать ("shouldMessage": false).
+
+ОТВЕЧАЙ СТРОГО ОДНИМ JSON БЕЗ MARKDOWN:
+{"shouldMessage": true, "reply": "живое сообщение руководителю в Direct (или пустая строка если shouldMessage=false)"}`;
+
+  const raw = await callAI([{ role: 'user', content: prompt }]);
+  const cleaned = stripCodeFences(raw);
+  const s = cleaned.indexOf('{');
+  const e = cleaned.lastIndexOf('}');
+  if (s === -1 || e <= s) return { shouldMessage: false, reply: '' };
+
+  const parsed = JSON.parse(cleaned.slice(s, e + 1));
+  return {
+    shouldMessage: Boolean(parsed.shouldMessage) && Boolean(String(parsed.reply || '').trim()),
+    reply: String(parsed.reply || '').trim()
+  };
 }
 
 export async function generateEmployeeChatReply(dm, employee, playerText) {
@@ -43,7 +93,7 @@ export async function generateEmployeeChatReply(dm, employee, playerText) {
     .map((m) => `${m.sender === 'player' ? 'Руководитель' : m.sender === 'system' ? 'Система' : employee.name}: ${m.text}`)
     .join('\n');
 
-  const prompt = `Ты переписываешься с руководителем в Direct как обычный живой человек. Отвечай ПО СУТИ вопроса, спокойно и естественно!
+  const prompt = `Ты переписываешься с руководителем в Direct как обычный живой человек. Отвечай ПО СУТИ, учитывая имя и пол руководителя!
 ${getEmployeeContext(employee)}
 
 Недавняя переписка:
@@ -51,8 +101,8 @@ ${threadText}
 Новое сообщение руководителя: "${playerText}"
 
 ПРАВИЛА:
-1. Отвечай живо и по делу (1–3 предложения) в своём характере.
-2. ЗАПРЕЩЕНО ныть про работу, просить заказы или говорить «хочу работать / давай заказы» если разговор о другом, и ЗАПРЕЩЕНЫ шаблонные отписки вроде «хорошо, понял». Никакого JSON и упоминаний игры!`;
+1. Отвечай живо и по делу (1–3 предложения) в своём характере, без шаблонных отписок.
+2. Помни, о чём вы договорились выше. Никакого JSON и упоминаний игры!`;
 
   const raw = await callAI([{ role: 'user', content: prompt }]);
   const clean = stripCodeFences(raw).trim();
@@ -62,6 +112,7 @@ ${threadText}
 
 export async function generateFloristPurchaseReport(employee, flowerName, qty, cost) {
   const prompt = `Ты — флорист-помощник ${employee.name} (${employee.gender === 'female' ? 'женщина' : 'мужчина'}, характер: ${employee.quirk || 'ответственный'}).
+Руководитель: ${getBadgeRuleText()}
 Ты только что съездил на оптовую базу по поручению руководителя, купил ${qty} шт. «${flowerName}» за ${cost} ₽ и расставил цветы по вазам в лавке.
 Напиши живой короткий отчёт руководителю в Direct (1–2 предложения, в своём роде и характере). Без JSON!`;
 
@@ -83,7 +134,7 @@ ${getEmployeeContext(courier)}
 - Примечание: ${delivery.recipientNote || 'обычная доставка'}
 - Погода: ${weatherLabel}.
 
-ПРИДУМАЙ С НУЛЯ абсолютно уникальную, правдоподобную, нешаблонную проблему, которая случилась прямо сейчас в пути или на месте (например: закрытый двор, охрана, неработающий лифт, путаница с корпусами, ремонт дороги, собака, получатель отошёл и т.п. — придумай свою свежую ситуацию!).
+ПРИДУМАЙ С НУЛЯ абсолютно уникальную, правдоподобную, нешаблонную проблему, которая случилась прямо сейчас в пути или на месте.
 Напиши сообщение руководителю в Direct (2–3 предложения): опиши что случилось и ОБЯЗАТЕЛЬНО спроси, как поступить, потому что ты ждёшь ответа.
 
 Верни СТРОГО ОДИН JSON без markdown:

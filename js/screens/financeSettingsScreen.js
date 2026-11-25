@@ -5,8 +5,9 @@
 
 import { AI_PROVIDERS, JOB_ROLES, FRANCHISE_CATALOG } from '../config.js';
 import { gameState, aiSettings, saveState, saveAiSettings, resetState, setCurrentGameDate } from '../state.js';
-import { testAiConnection, resolvePlayerGender } from '../ai.js';
+import { testAiConnection, resolvePlayerGender, generateSalaryChangeReaction, formatMinutesAsTime } from '../ai.js';
 import { openBranchVisitModal } from './franchiseVisitScreen.js';
+import { playBellSound } from '../sound.js';
 
 let activeTab = 'cash';
 let isTestingAi = false;
@@ -62,7 +63,14 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
                       ${escapeHtml(emp.roleName)} • ${emp.salary} ₽/смену • ${escapeHtml(emp.scheduleLabel)}
                     </div>
                   </div>
-                  <button class="btn btn-danger" data-fire-emp="${emp.id}" style="padding:5px 9px; font-size:11px;">Уволить</button>
+       <button class="btn btn-danger" data-fire-emp="${emp.id}" style="padding:5px 9px; font-size:11px;">Уволить</button>
+                </div>
+                <div style="display:flex; gap:5px; align-items:center;">
+                  <span class="muted-text" style="font-size:11px;">Ставка:</span>
+                  <button class="btn btn-soft" data-sal-step="${emp.id}:-100" style="padding:4px 8px; font-size:11px;">-100</button>
+                  <input type="number" class="form-input" id="emp-sal-input-${emp.id}" value="${emp.salary}" min="300" step="50" style="padding:4px 7px; font-size:11.5px; width:76px; text-align:center;" />
+                  <button class="btn btn-soft" data-sal-step="${emp.id}:100" style="padding:4px 8px; font-size:11px;">+100</button>
+                  <button class="btn btn-sage" data-sal-apply="${emp.id}" style="padding:4px 9px; font-size:11px;">✓</button>
                 </div>
                 ${
                   franchises.length
@@ -198,6 +206,76 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
         <button class="btn btn-sage" id="btn-save-badge">💾 Сохранить профиль и бейджик</button>
       </div>
     `;
+
+    const applyEmployeeSalary = async (empId, nextRaw) => {
+      const emp = (gameState.employees || []).find((e) => e.id === empId);
+      if (!emp) return;
+      const oldSalary = Number(emp.salary) || 1200;
+      const newSalary = Math.max(300, Math.min(15000, Math.round((Number(nextRaw) || oldSalary) / 50) * 50));
+      if (newSalary === oldSalary) {
+        showToast(`Ставка ${emp.name} осталась ${newSalary} ₽`);
+        return;
+      }
+      emp.salary = newSalary;
+      saveState();
+      onHudUpdate();
+      showToast(`💼 Ставка ${emp.name}: ${oldSalary} ₽ → ${newSalary} ₽/смену`);
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+
+      try {
+        let dm = (gameState.directMessages || []).find((m) => m.kind === 'employee' && m.employeeId === emp.id);
+        const res = await generateSalaryChangeReaction(emp, oldSalary, newSalary, dm?.thread || []);
+        if (res.shouldMessage && res.reply) {
+          if (!dm) {
+            dm = {
+              id: 'dm_emp_' + emp.id,
+              senderName: `${emp.name} (${emp.roleName})`,
+              kind: 'employee',
+              employeeId: emp.id,
+              text: '',
+              read: false,
+              blockedByPlayer: false,
+              blockedByClient: false,
+              day: gameState.day,
+              createdTimeLabel: formatMinutesAsTime(gameState.timeMinutes || 540),
+              thread: []
+            };
+            gameState.directMessages.unshift(dm);
+          }
+          if (!Array.isArray(dm.thread)) dm.thread = [];
+          dm.thread.push({ sender: 'system', text: `💼 Ставка изменена: ${oldSalary} ₽ → ${newSalary} ₽/см.` });
+          dm.thread.push({ sender: 'client', text: res.reply });
+          dm.text = res.reply;
+          dm.createdTimeLabel = formatMinutesAsTime(gameState.timeMinutes || 540);
+          dm.read = false;
+          saveState();
+          onHudUpdate();
+          playBellSound();
+          showToast(`💬 ${emp.name} отреагировал(а) на изменение зарплаты в Direct!`);
+        }
+      } catch (err) {
+        console.warn('Реакция на изменение зарплаты не получена:', err);
+      }
+    };
+
+    container.querySelectorAll('[data-sal-step]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [empId, deltaStr] = btn.dataset.salStep.split(':');
+        const input = document.getElementById(`emp-sal-input-${empId}`);
+        const cur = Number(input?.value) || 1200;
+        const next = Math.max(300, cur + Number(deltaStr));
+        if (input) input.value = next;
+        applyEmployeeSalary(empId, next);
+      });
+    });
+
+    container.querySelectorAll('[data-sal-apply]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const empId = btn.dataset.salApply;
+        const input = document.getElementById(`emp-sal-input-${empId}`);
+        applyEmployeeSalary(empId, input?.value);
+      });
+    });
 
     container.querySelectorAll('[data-fire-emp]').forEach((btn) => {
       btn.addEventListener('click', () => {

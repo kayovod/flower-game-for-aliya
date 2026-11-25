@@ -3,18 +3,18 @@
  * Зона живых клиентов в торговом зале: карточка, чат, торг, предложения товаров и оплата
  */
 
-import { FLOWERS_CATALOG, ACCESSORIES_CATALOG } from '/js/config.js';
-import { gameState, aiSettings, saveState, addGameMinutes } from '/js/state.js';
-import { getClientAvatarSvg } from '/js/graphics/avatarSvg.js';
-import { getSingleFlowerWrappedSvg } from '/js/graphics/flowersSvg.js';
+import { FLOWERS_CATALOG, ACCESSORIES_CATALOG } from '../../config.js';
+import { gameState, saveState, addGameMinutes } from '../../state.js';
+import { getClientAvatarSvg } from '../../graphics/avatarSvg.js';
+import { getSingleFlowerWrappedSvg } from '../../graphics/flowersSvg.js';
 import {
   generateRandomClient,
   generatePreorderClient,
   buildClientSystemPrompt,
   callAI,
   parseClientJson
-} from '/js/ai.js';
-import { playBellSound, playCoinSound } from '/js/sound.js';
+} from '../../ai.js';
+import { playBellSound, playCoinSound } from '../../sound.js';
 
 let activeClient = null;
 let isAiThinking = false;
@@ -22,6 +22,7 @@ let showOfferDrawer = false;
 let showRejectPanel = false;
 let pendingOffer = null;
 let lastFailedRequest = null;
+let pendingScrollToClient = false;
 
 const SHOP_REJECT_TEMPLATES = [
   'Нет нужных цветов в наличии',
@@ -44,6 +45,12 @@ export function getIsAiThinking() {
 
 export function isClientTalkingNow() {
   return Boolean(activeClient && activeClient.status === 'talking');
+}
+
+export function consumePendingScrollToClient() {
+  const val = pendingScrollToClient;
+  pendingScrollToClient = false;
+  return val;
 }
 
 export function checkPreorderArrival(onHudUpdate, showToast, renderShopMain) {
@@ -83,9 +90,28 @@ export function checkPreorderArrival(onHudUpdate, showToast, renderShopMain) {
 
 export function renderClientZoneHtml(closedNow, waitingDue) {
   if (!activeClient) {
+    if (isAiThinking) {
+      return `
+        <div class="card" id="client-zone-anchor" style="padding: 24px 14px; min-height: 200px; display: flex; align-items: center; justify-content: center; text-align: center;">
+          <p class="muted-text">🚪 Дверь звенит... К прилавку подходит новый покупатель...</p>
+        </div>
+      `;
+    }
+    if (lastFailedRequest && (lastFailedRequest.type === 'summon' || lastFailedRequest.type === 'summon_preorder')) {
+      return `
+        <div class="card" id="client-zone-anchor" style="padding: 12px; text-align: center; gap: 8px;">
+          <p class="muted-text" style="color: var(--danger); font-size: 12px;">
+            ⚠️ Не удалось позвать клиента: ${escapeHtml(lastFailedRequest.errorMsg || 'ошибка ИИ')}
+          </p>
+          <button class="btn btn-soft" id="btn-retry-ai" style="font-size:12px; padding:8px 10px;">
+            🔄 Повторить запрос ИИ
+          </button>
+        </div>
+      `;
+    }
     if (waitingDue) {
       return `
-        <div class="card" style="padding: 12px; text-align: center;">
+        <div class="card" id="client-zone-anchor" style="padding: 12px; text-align: center;">
           <p class="muted-text">🕒 У двери уже ждёт заказчик по предзаказу на ${waitingDue.dueTimeLabel}!</p>
           <button class="btn btn-primary" id="btn-call-due-preorder" data-preorder-id="${waitingDue.id}">
             🔔 Пригласить ${escapeHtml(waitingDue.senderName)}
@@ -95,13 +121,13 @@ export function renderClientZoneHtml(closedNow, waitingDue) {
     }
     if (closedNow) {
       return `
-        <div class="card" style="padding: 12px; text-align: center;">
+        <div class="card" id="client-zone-anchor" style="padding: 12px; text-align: center;">
           <p class="muted-text">🌙 Рабочий день окончен — новые клиенты уже не заходят. Можешь дособирать букеты на завтра или отправиться в «🏠 Домик» спать.</p>
         </div>
       `;
     }
     return `
-      <div class="card" style="padding: 12px; text-align: center;">
+      <div class="card" id="client-zone-anchor" style="padding: 12px; text-align: center;">
         <p class="muted-text">В зале пока тихо. Открой дверь для нового покупателя!</p>
         <button class="btn btn-primary" id="btn-call-client" ${isAiThinking ? 'disabled' : ''}>
           🔔 Позвать следующего клиента
@@ -128,7 +154,7 @@ export function renderClientZoneHtml(closedNow, waitingDue) {
       : null;
 
   return `
-    <div class="client-card">
+    <div class="client-card" id="client-zone-anchor">
       <div class="client-header">
         <div class="client-avatar">
           ${getClientAvatarSvg(activeClient.appearance, activeClient.mood)}
@@ -341,7 +367,7 @@ function getBouquetFreshnessWord(bouquet) {
   return 'свежие';
 }
 
-function getVaseFreshnessWord(freshness) {
+export function getVaseFreshnessWord(freshness) {
   if (freshness < 40) return 'подвявший, поникший';
   if (freshness < 70) return 'обычной свежести';
   return 'свежий';
@@ -444,84 +470,103 @@ export function handleCounterBouquetSell(bouquetId, onHudUpdate, showToast, rend
 
 export async function summonNextClient(onHudUpdate, showToast, renderShopMain) {
   if (isAiThinking) return;
-  activeClient = generateRandomClient();
+  activeClient = null;
   pendingOffer = null;
   showOfferDrawer = false;
   showRejectPanel = false;
   lastFailedRequest = null;
   isAiThinking = true;
-
-  const systemPrompt = buildClientSystemPrompt(activeClient);
-  activeClient.history = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: 'Ты только что вошёл в цветочный магазин. Поприветствуй продавца и скажи или намекни, что ищешь.' }
-  ];
+  pendingScrollToClient = true;
 
   renderShopMain();
-  await requestSummonGreeting(onHudUpdate, showToast, renderShopMain);
+
+  try {
+    const newClient = await generateRandomClient();
+    const firstReply = newClient.initialReply || '';
+    const wantedId = newClient.initialWantedBouquetId || detectRequestedBouquetId(firstReply);
+    if (wantedId) newClient.wantedBouquetId = wantedId;
+    const cleanReply = cleanClientReplyText(firstReply);
+
+    newClient.history = [
+      { role: 'system', content: buildClientSystemPrompt(newClient) },
+      { role: 'user', content: 'Ты только что вошёл в цветочный магазин. Поприветствуй продавца и скажи или намекни, что ищешь.' },
+      { role: 'assistant', content: JSON.stringify({ reply: cleanReply, moodChange: 0, dealStatus: 'talking' }) }
+    ];
+    newClient.chatLog = [{ sender: 'client', text: cleanReply }];
+    delete newClient.initialReply;
+    delete newClient.initialWantedBouquetId;
+
+    activeClient = newClient;
+    lastFailedRequest = null;
+  } catch (err) {
+    lastFailedRequest = { type: 'summon', errorMsg: err.message };
+    showToast(`⚠️ Ошибка ИИ: ${err.message}`);
+  } finally {
+    isAiThinking = false;
+    pendingScrollToClient = true;
+    renderShopMain();
+  }
 }
 
 export async function summonPreorderClient(preorder, onHudUpdate, showToast, renderShopMain) {
   if (isAiThinking) return;
-  activeClient = generatePreorderClient(preorder);
+  activeClient = null;
   pendingOffer = null;
   showOfferDrawer = false;
   showRejectPanel = false;
   lastFailedRequest = null;
   isAiThinking = true;
-
-  const systemPrompt = buildClientSystemPrompt(activeClient);
-  activeClient.history = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: 'Ты только что вошёл в цветочный магазин за своим предзаказом из Direct. Поприветствуй продавца и напомни про свой заказ ко времени.' }
-  ];
+  pendingScrollToClient = true;
 
   renderShopMain();
-  await requestSummonGreeting(onHudUpdate, showToast, renderShopMain);
-}
 
-async function requestSummonGreeting(onHudUpdate, showToast, renderShopMain) {
-  if (!activeClient) return;
   try {
-    activeClient.history[0].content = buildClientSystemPrompt(activeClient);
-    const raw = await callAI(activeClient.history);
-    const parsed = parseClientJson(raw);
-    const wantedId = detectRequestedBouquetId(parsed.reply);
-    if (wantedId) {
-      activeClient.wantedBouquetId = wantedId;
-    }
-    const cleanReply = cleanClientReplyText(parsed.reply);
-    activeClient.history.push({ role: 'assistant', content: raw });
-    activeClient.chatLog.push({ sender: 'client', text: cleanReply });
+    const newClient = await generatePreorderClient(preorder);
+    const firstReply = newClient.initialReply || '';
+    const cleanReply = cleanClientReplyText(firstReply);
+
+    newClient.history = [
+      { role: 'system', content: buildClientSystemPrompt(newClient) },
+      { role: 'user', content: 'Ты только что вошёл в цветочный магазин за своим предзаказом из Direct. Поприветствуй продавца и напомни про свой заказ ко времени.' },
+      { role: 'assistant', content: JSON.stringify({ reply: cleanReply, moodChange: 0, dealStatus: 'talking' }) }
+    ];
+    newClient.chatLog = [{ sender: 'client', text: cleanReply }];
+    delete newClient.initialReply;
+
+    activeClient = newClient;
     lastFailedRequest = null;
   } catch (err) {
-    lastFailedRequest = { type: 'summon' };
-    activeClient.chatLog.push({
-      sender: 'system',
-      text: `⚠️ Не удалось связаться с ИИ: ${err.message}`
-    });
+    lastFailedRequest = { type: 'summon_preorder', preorder, errorMsg: err.message };
+    showToast(`⚠️ Ошибка ИИ: ${err.message}`);
   } finally {
     isAiThinking = false;
+    pendingScrollToClient = true;
     renderShopMain();
   }
 }
 
 export async function retryLastAiRequest(onHudUpdate, showToast, renderShopMain) {
-  if (!activeClient || isAiThinking || !lastFailedRequest) return;
+  if (isAiThinking || !lastFailedRequest) return;
   const retryData = lastFailedRequest;
   lastFailedRequest = null;
 
+  if (retryData.type === 'summon') {
+    await summonNextClient(onHudUpdate, showToast, renderShopMain);
+    return;
+  }
+
+  if (retryData.type === 'summon_preorder') {
+    await summonPreorderClient(retryData.preorder, onHudUpdate, showToast, renderShopMain);
+    return;
+  }
+
+  if (!activeClient) return;
   if (activeClient.chatLog.length && activeClient.chatLog[activeClient.chatLog.length - 1].sender === 'system') {
     activeClient.chatLog.pop();
   }
 
   isAiThinking = true;
   renderShopMain();
-
-  if (retryData.type === 'summon') {
-    await requestSummonGreeting(onHudUpdate, showToast, renderShopMain);
-    return;
-  }
 
   if (retryData.type === 'message') {
     await executePlayerMessageCall(retryData.aiText, retryData.offerObj, retryData.displayText, onHudUpdate, showToast, renderShopMain);
