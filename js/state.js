@@ -99,7 +99,10 @@ export function createInitialAiSettings() {
     provider: 'openrouter',
     apiKey: '',
     baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'baidu/ernie-5.5-flash-preview:free'
+    model: 'baidu/ernie-5.5-flash-preview:free',
+    useCfProxy: true,
+    cfGatewayUrl: '',
+    cfAuthToken: ''
   };
 }
 

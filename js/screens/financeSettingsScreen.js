@@ -12,6 +12,7 @@ import { playBellSound } from '../sound.js';
 let activeTab = 'cash';
 let isTestingAi = false;
 let showApiKey = false;
+let showCfToken = false;
 let aiStatusMessage = null;
 
 export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
@@ -359,6 +360,9 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
     );
     const curIso = `${curDateObj.getFullYear()}-${String(curDateObj.getMonth() + 1).padStart(2, '0')}-${String(curDateObj.getDate()).padStart(2, '0')}`;
 
+    const isGemini = aiSettings.provider === 'gemini';
+    const useCfProxy = aiSettings.useCfProxy !== false;
+
     const providerOptions = Object.values(AI_PROVIDERS)
       .map((p) => `<option value="${p.id}" ${p.id === aiSettings.provider ? 'selected' : ''}>${p.name}</option>`)
       .join('');
@@ -400,14 +404,78 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
             : ''
         }
 
-        <div class="form-group">
-          <label class="form-label">Базовый URL</label>
-          <input type="text" class="form-input" id="ai-url-input" autocomplete="off" value="${escapeAttr(aiSettings.baseUrl)}" placeholder="https://..." />
-        </div>
+        ${
+          isGemini
+            ? `
+          <div class="dm-card" style="padding:10px; gap:8px; background:rgba(125,158,127,0.08);">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;">
+              <span style="font-size:12.5px; font-weight:600;">🛡️ Обход блокировки через Cloudflare (без VPN)</span>
+              <input type="checkbox" id="ai-cf-proxy-toggle" ${useCfProxy ? 'checked' : ''} style="width:18px; height:18px; accent-color:var(--sage-dark); cursor:pointer;" />
+            </label>
+            <span class="muted-text" style="font-size:11.5px;">
+              ${
+                useCfProxy
+                  ? 'Включено: запросы идут через твой Cloudflare AI Gateway (работает в РФ без VPN).'
+                  : 'Выключено: запросы идут напрямую с твоего IP-адреса (включи свой VPN, если ты в РФ).'
+              }
+            </span>
+          </div>
+
+          ${
+            useCfProxy
+              ? `
+            <div class="form-group">
+              <label class="form-label">URL шлюза Cloudflare (google-ai-studio)</label>
+              <input
+                type="text"
+                class="form-input"
+                id="ai-cf-url-input"
+                autocomplete="off"
+                spellcheck="false"
+                value="${escapeAttr(aiSettings.cfGatewayUrl || '')}"
+                placeholder="https://gateway.ai.cloudflare.com/v1/.../google-ai-studio"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Токен Cloudflare (cf-aig-authorization)</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input
+                  type="text"
+                  class="form-input ${showCfToken ? '' : 'masked-input'}"
+                  id="ai-cf-token-input"
+                  name="fleur_cf_token"
+                  autocomplete="off"
+                  spellcheck="false"
+                  value="${escapeAttr(aiSettings.cfAuthToken || '')}"
+                  placeholder="cfut_..."
+                  style="flex:1;"
+                />
+                <button class="btn btn-soft" id="btn-toggle-cf-token-vis" type="button" title="Показать / скрыть токен" style="padding:10px 11px;">
+                  ${showCfToken ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+          `
+              : `
+            <div class="form-group">
+              <label class="form-label">Базовый URL</label>
+              <input type="text" class="form-input" id="ai-url-input" autocomplete="off" value="${escapeAttr(aiSettings.baseUrl)}" placeholder="https://generativelanguage.googleapis.com/v1beta" />
+            </div>
+          `
+          }
+        `
+            : `
+          <div class="form-group">
+            <label class="form-label">Базовый URL</label>
+            <input type="text" class="form-input" id="ai-url-input" autocomplete="off" value="${escapeAttr(aiSettings.baseUrl)}" placeholder="https://..." />
+          </div>
+        `
+        }
 
         <div class="form-group">
           <label class="form-label">Модель ИИ</label>
-          <input type="text" class="form-input" id="ai-model-input" autocomplete="off" value="${escapeAttr(aiSettings.model)}" placeholder="например gemini-2.5-flash" />
+          <input type="text" class="form-input" id="ai-model-input" autocomplete="off" value="${escapeAttr(aiSettings.model)}" placeholder="например gemini-flash-lite-latest" />
         </div>
 
         <div style="display:flex; gap:8px;">
@@ -480,16 +548,35 @@ export function renderFinanceSettingsScreen(onHudUpdate, showToast) {
       const keyInput = document.getElementById('ai-key-input');
       const urlInput = document.getElementById('ai-url-input');
       const modelInput = document.getElementById('ai-model-input');
+      const cfProxyToggle = document.getElementById('ai-cf-proxy-toggle');
+      const cfUrlInput = document.getElementById('ai-cf-url-input');
+      const cfTokenInput = document.getElementById('ai-cf-token-input');
+
       saveAiSettings({
         apiKey: keyInput ? keyInput.value.trim() : aiSettings.apiKey,
         baseUrl: urlInput ? urlInput.value.trim() : aiSettings.baseUrl,
-        model: modelInput ? modelInput.value.trim() : aiSettings.model
+        model: modelInput ? modelInput.value.trim() : aiSettings.model,
+        useCfProxy: cfProxyToggle ? cfProxyToggle.checked : aiSettings.useCfProxy,
+        cfGatewayUrl: cfUrlInput ? cfUrlInput.value.trim() : aiSettings.cfGatewayUrl,
+        cfAuthToken: cfTokenInput ? cfTokenInput.value.trim() : aiSettings.cfAuthToken
       });
     }
+
+    document.getElementById('ai-cf-proxy-toggle')?.addEventListener('change', () => {
+      readFormAndSave();
+      aiStatusMessage = null;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
 
     document.getElementById('btn-toggle-key-vis')?.addEventListener('click', () => {
       readFormAndSave();
       showApiKey = !showApiKey;
+      renderFinanceSettingsScreen(onHudUpdate, showToast);
+    });
+
+    document.getElementById('btn-toggle-cf-token-vis')?.addEventListener('click', () => {
+      readFormAndSave();
+      showCfToken = !showCfToken;
       renderFinanceSettingsScreen(onHudUpdate, showToast);
     });
 

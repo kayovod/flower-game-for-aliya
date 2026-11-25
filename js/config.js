@@ -30,9 +30,9 @@ export const AI_PROVIDERS = {
     id: 'gemini',
     name: 'Google Gemini (Нативный API)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-flash-lite-latest',
     needsKey: true,
-    hint: 'Ключ от Google AI Studio (AIza...). Используй gemini-2.5-flash или gemini-2.0-flash.'
+    hint: 'Ключ от Google AI Studio. Для работы в РФ без VPN включи тумблер Cloudflare ниже и введи свой шлюз и токен.'
   },
   mistral: {
     id: 'mistral',

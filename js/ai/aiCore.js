@@ -22,6 +22,12 @@ export function formatApiError(status, rawText) {
   if (status === 401 || status === 403 || lower.includes('api key')) {
     return 'Неверный или заблокированный API-ключ. Проверь ключ в «Касса и ИИ».';
   }
+  if (status === 400 && lower.includes('location is not supported')) {
+    return 'Google заблокировал запрос по стране (400). Включи тумблер «Обход через Cloudflare» в «Касса и ИИ» или используй VPN.';
+  }
+  if (lower.includes('aig') || lower.includes('cloudflare') || (status === 401 && lower.includes('authorization'))) {
+    return 'Ошибка авторизации шлюза Cloudflare. Проверь URL шлюза и токен Cloudflare в «Касса и ИИ».';
+  }
   if (status === 404 || lower.includes('not found')) {
     return 'Указанная модель ИИ не найдена. Проверь название модели в «Касса и ИИ».';
   }
@@ -44,13 +50,32 @@ export async function fetchWithTimeout(url, options, timeoutMs = 35000) {
   }
 }
 
-export async function callAI(messages) {
+function isRetryableAiError(err) {
+  if (!err || err.nonRetryable) return false;
+  const msg = String(err.message || '').toLowerCase();
+  if (
+    msg.includes('не указан api-ключ') ||
+    msg.includes('не указан url шлюза') ||
+    msg.includes('не указан токен cloudflare') ||
+    msg.includes('неверный или заблокированный api-ключ') ||
+    msg.includes('не найдена') ||
+    msg.includes('заблокировал запрос по стране') ||
+    msg.includes('ошибка авторизации шлюза cloudflare')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+async function callAIOnce(messages) {
   const provider = aiSettings.provider || 'openrouter';
   const providerMeta = AI_PROVIDERS[provider] || AI_PROVIDERS.openrouter;
 
   if (provider === 'puter') {
     if (!window.puter || !window.puter.ai) {
-      throw new Error('Puter.js не загрузился. Проверь интернет или переключи провайдера в «Касса и ИИ».');
+      const e = new Error('Puter.js не загрузился. Проверь интернет или переключи провайдера в «Касса и ИИ».');
+      e.nonRetryable = true;
+      throw e;
     }
     const model = aiSettings.model || 'gpt-4o-mini';
     const response = await window.puter.ai.chat(messages, { model });
@@ -60,13 +85,14 @@ export async function callAI(messages) {
 
   const apiKey = (aiSettings.apiKey || '').trim();
   if (providerMeta.needsKey && !apiKey) {
-    throw new Error('Не указан API-ключ в разделе «Касса и ИИ → Настройки и ИИ»!');
+    const e = new Error('Не указан API-ключ в разделе «Касса и ИИ → Настройки и ИИ»!');
+    e.nonRetryable = true;
+    throw e;
   }
 
   if (provider === 'gemini') {
-    const baseUrl = (aiSettings.baseUrl || providerMeta.baseUrl).replace(/\/+$/, '');
     const model = (aiSettings.model || providerMeta.defaultModel).trim();
-    const url = `${baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const useCfProxy = aiSettings.useCfProxy !== false;
 
     const systemMsg = messages.find((m) => m.role === 'system')?.content || '';
     const contents = messages
@@ -88,11 +114,36 @@ export async function callAI(messages) {
       generationConfig.thinkingConfig = { thinkingBudget: 0 };
     }
 
+    let url = '';
+    const headers = { 'Content-Type': 'application/json' };
+
+    if (useCfProxy) {
+      const cfGatewayUrl = (aiSettings.cfGatewayUrl || '')
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/\/v1beta$/, '');
+      const cfAuthRaw = (aiSettings.cfAuthToken || '').trim();
+
+      if (!cfGatewayUrl) {
+        const e = new Error('Включён обход через Cloudflare, но не указан URL шлюза в «Касса и ИИ → Настройки и ИИ»!');
+        e.nonRetryable = true;
+        throw e;
+      }
+      url = `${cfGatewayUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      headers['x-goog-api-key'] = apiKey;
+      if (cfAuthRaw) {
+        headers['cf-aig-authorization'] = /^bearer\s+/i.test(cfAuthRaw) ? cfAuthRaw : `Bearer ${cfAuthRaw}`;
+      }
+    } else {
+      const baseUrl = (aiSettings.baseUrl || providerMeta.baseUrl).replace(/\/+$/, '');
+      url = `${baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    }
+
     const res = await fetchWithTimeout(
       url,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ contents, generationConfig })
       },
       24000
@@ -100,7 +151,11 @@ export async function callAI(messages) {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(formatApiError(res.status, errText));
+      const e = new Error(formatApiError(res.status, errText));
+      if ([400, 401, 403, 404].includes(res.status)) {
+        e.nonRetryable = true;
+      }
+      throw e;
     }
 
     const data = await res.json();
@@ -143,13 +198,36 @@ export async function callAI(messages) {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(formatApiError(res.status, errText));
+    const e = new Error(formatApiError(res.status, errText));
+    if ([400, 401, 403, 404].includes(res.status)) {
+      e.nonRetryable = true;
+    }
+    throw e;
   }
 
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error('ИИ вернул пустой ответ');
   return text.trim();
+}
+
+export async function callAI(messages) {
+  const maxAttempts = 3;
+  let lastErr;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await callAIOnce(messages);
+    } catch (err) {
+      lastErr = err;
+      const isTimeout = String(err.message || '').toLowerCase().includes('таймаут');
+      if ((isTimeout && attempt >= 2) || attempt >= maxAttempts || !isRetryableAiError(err)) {
+        throw err;
+      }
+      await sleep(900 * attempt);
+    }
+  }
+  throw lastErr;
 }
 
 export async function testAiConnection() {
